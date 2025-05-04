@@ -22,6 +22,11 @@
                 <a href="#reports" 
                    class="list-group-item list-group-item-action" 
                    data-bs-toggle="tab">
+                    <i class="bi bi-file-earmark-text"></i> Отчеты
+                </a>
+                <a href="#forecastResults" 
+                   class="list-group-item list-group-item-action" 
+                   data-bs-toggle="tab">
                     <i class="bi bi-file-bar-graph"></i> Результаты прогнозирования
                 </a>
             </div>
@@ -174,8 +179,54 @@
                 </div>
             </div>
 
-            <!-- Вкладка "Результат прогнозирования" -->
+            <!-- Вкладка "Отчеты" -->
             <div class="tab-pane fade" id="reports">
+                <div class="card shadow-sm">
+                    <div class="card-header bg-info text-white">
+                        <i class="bi bi-pie-chart"></i> Аналитика
+                    </div>
+                    <div class="card-body">
+                        <div class="row mb-4 g-2">
+                            <div class="col-md-4">
+                                <button class="btn btn-primary w-100" 
+                                        onclick="generateReport('stats')">
+                                    <i class="bi bi-clipboard-data"></i> Статистика
+                                </button>
+                            </div>
+                            <div class="col-md-4">
+                                <button class="btn btn-success w-100" 
+                                        onclick="generateReport('sales')">
+                                    <i class="bi bi-graph-up"></i> Продажи
+                                </button>
+                            </div>
+                            <div class="col-md-4">
+                                <button class="btn btn-warning w-100" 
+                                        onclick="generateReport('demand')">
+                                    <i class="bi bi-bar-chart"></i> Спрос
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Контейнер для визуализации -->
+                        <div id="visualizationContainer">
+                            <div id="plotlyChart" style="height: 500px;"></div>
+                            <div id="textReport" class="d-none mt-4">
+                                <div class="card">
+                                    <div class="card-header bg-light">
+                                        <i class="bi bi-file-text"></i> Статистический отчет
+                                    </div>
+                                    <div class="card-body">
+                                        <pre class="mb-0" id="reportContent"></pre>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Вкладка "Результат прогнозирования" -->
+            <div class="tab-pane fade" id="forecastResults">
                 <div class="card shadow-sm">
                     <div class="card-header bg-info text-white">
                         <i class="bi bi-pie-chart"></i> Результат прогнозирования

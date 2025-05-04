@@ -167,12 +167,16 @@ def generate_report():
             return jsonify({'text': report})
         
         elif report_type == 'sales':
-            fig = px.line(df, x='Дата', y='Продажи', title='Динамика продаж')
-            return jsonify({'plot': fig.to_dict()})
+            fig = px.line(df, x='date', y='value', title='Динамика продаж')
+            fig_dict = fig.to_dict()
+            fig_dict['data'][0]['x'] = list(fig_dict['data'][0]['x'])
+            return jsonify({'plot': fig_dict})
         
         elif report_type == 'demand':
-            fig = px.bar(df, x='Товар', y='Спрос', title='Спрос на товары')
-            return jsonify({'plot': fig.to_dict()})
+            fig = px.bar(df, x='category', y='value', title='Спрос на товары')
+            fig_dict = fig.to_dict()
+            fig_dict['data'][0]['x'] = list(fig_dict['data'][0]['x'])
+            return jsonify({'plot': fig_dict})
             
     except Exception as e:
         return jsonify({'error': str(e)}), 500
