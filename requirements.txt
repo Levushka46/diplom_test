@@ -6,3 +6,4 @@ plotly[express]
 prophet
 statsmodels
 pmdarima
+numpy==1.26.4

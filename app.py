@@ -219,56 +219,58 @@ def forecast():
             forecast = m.predict(future)
 
         elif model == 'arima':
-            # 1. Загрузка данных и подготовка
-            # Предполагается, что у вас есть DataFrame df с колонками 'date' и 'value'
+            # 1. Загрузка и подготовка данных
             df['date'] = pd.to_datetime(df['date'])
-            df = df.set_index('date').asfreq('D')   # задаём дневную частоту (при необходимости менять)
-            df['value'].interpolate(method='time', inplace=True)  # заполняем пропуски
+            df = df.set_index('date').asfreq('D')
+            df['value'].interpolate(method='time', inplace=True)
 
-            # 2. Разделение на train и test (опционально)
-            #train = df.iloc[:-30]   # всё, кроме последних 30 дней
-            #test  = df.iloc[-30:]   # последние 30 дней для валидации
+            # Переименуем для единообразия с Prophet
+            df = df.rename(columns={'value': 'y'})
+            df = df.reset_index().rename(columns={'date': 'ds'})
+            df['ds'] = pd.to_datetime(df['ds'])
+
+            # 2. Разделим на train / test (по желанию)
+            #train = df.iloc[:-30]
+            #test  = df.iloc[-30:]
             train = df
 
-            # 3. Подбор гиперпараметров (p, d, q) автоматически
-            stepwise_model = auto_arima(train['value'], start_p=0, start_q=0,
-                                        max_p=5, max_q=5, m=7,          # m=7 — для недельной сезонности
-                                        start_P=0, seasonal=True,       # если есть сезонность
-                                        d=None, D=1, trace=True,
-                                        error_action='ignore',
-                                        suppress_warnings=True,
-                                        stepwise=True)
+            # 3. Подбор параметров SARIMA
+            stepwise_model = auto_arima(
+                train['y'],
+                start_p=0, start_q=0,
+                max_p=5, max_q=5,
+                m=7,               # недельная сезонность
+                seasonal=True,
+                d=None, D=1,
+                trace=False,
+                error_action='ignore',
+                suppress_warnings=True,
+                stepwise=True
+            )
 
-            print(stepwise_model.summary())
-
-            # 4. Обучение финальной модели ARIMA
-            # Если вы хотите взять параметры из auto_arima:
-            order = stepwise_model.order     # (p, d, q)
-            seasonal_order = stepwise_model.seasonal_order  # (P, D, Q, m)
-
-            model = ARIMA(train['value'], order=order, seasonal_order=seasonal_order)
+            # 4. Обучение финальной модели
+            order = stepwise_model.order
+            seasonal_order = stepwise_model.seasonal_order
+            model = ARIMA(train['y'], order=order, seasonal_order=seasonal_order)
             fitted = model.fit()
-            print(fitted.summary())
 
-            # 5. Прогноз на будущие дни
+            # 5. Прогноз на будущие 30 дней
             n_periods = 30
-            forecast_result = fitted.get_forecast(steps=n_periods)
-            forecast = forecast_result.predicted_mean
-            conf_int = forecast_result.conf_int(alpha=0.05)
+            forecast_res = fitted.get_forecast(steps=n_periods)
+            forecast_mean = forecast_res.predicted_mean
+            conf_int = forecast_res.conf_int(alpha=0.05)
 
-            # 6. Визуализация
-            plt.figure(figsize=(12,6))
-            plt.plot(train.index, train['value'], label='Train')
-            plt.plot(test.index, test['value'], label='Test', color='orange')
-            plt.plot(forecast.index, forecast, label='Forecast', color='green')
-            plt.fill_between(forecast.index,
-                            conf_int.iloc[:, 0],
-                            conf_int.iloc[:, 1], color='lightgreen', alpha=0.5)
-            plt.legend()
-            plt.title('ARIMA Forecast of Sales')
-            plt.xlabel('Date')
-            plt.ylabel('Sales')
-            plt.show()
+            # 6. Формируем DataFrame для прогноза
+            last_date = df['ds'].max()
+            future_dates = pd.date_range(start=last_date + pd.Timedelta(days=1),
+                                        periods=n_periods, freq='D')
+
+            forecast = pd.DataFrame({
+                'ds': future_dates,
+                'yhat': forecast_mean.values,
+                'yhat_lower': conf_int.iloc[:, 0].values,
+                'yhat_upper': conf_int.iloc[:, 1].values
+            })
         
         # Форматируем результат
         result = {
