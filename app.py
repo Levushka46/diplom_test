@@ -10,6 +10,10 @@ import os
 from statsmodels.tsa.arima.model import ARIMA
 from pmdarima import auto_arima
 from prophet import Prophet
+import numpy as np
+from sklearn.preprocessing import MinMaxScaler
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import LSTM, Dense
 
 
 app = Flask(__name__)
@@ -271,6 +275,85 @@ def forecast():
                 'yhat_lower': conf_int.iloc[:, 0].values,
                 'yhat_upper': conf_int.iloc[:, 1].values
             })
+
+        elif model == 'lstm':
+            # 1. Загрузка и подготовка данных
+            # Предполагается, что у вас есть DataFrame df с колонками 'date' и 'value'
+            df['date'] = pd.to_datetime(df['date'])
+            df = df.set_index('date').asfreq('D')
+            df['value'].interpolate(method='time', inplace=True)
+
+            # Переименуем столбцы для единообразия
+            df = df.rename(columns={'value': 'y'}).reset_index().rename(columns={'date': 'ds'})
+
+            # 2. Масштабирование
+            scaler = MinMaxScaler(feature_range=(0, 1))
+            y_scaled = scaler.fit_transform(df['y'].values.reshape(-1, 1))
+
+            # 3. Создание обучающих последовательностей
+            def create_sequences(data, look_back=14):
+                X, y = [], []
+                for i in range(len(data) - look_back):
+                    X.append(data[i:(i + look_back), 0])
+                    y.append(data[i + look_back, 0])
+                return np.array(X), np.array(y)
+
+            LOOK_BACK = 7  # число дней для входной последовательности
+            X, y = create_sequences(y_scaled, look_back=LOOK_BACK)
+
+            # Разделим на train и test (оставим последние 30 точек для проверки)
+            #train_size = len(X) - 30
+            #X_train, X_test = X[:train_size], X[train_size:]
+            #y_train, y_test = y[:train_size], y[train_size:]
+
+            # Приведём входы к форме [samples, timesteps, features]
+            #X_train = X_train.reshape((X_train.shape[0], LOOK_BACK, 1))
+            #X_test  = X_test.reshape((X_test.shape[0], LOOK_BACK, 1))
+
+            X_train = X.reshape((X.shape[0], LOOK_BACK, 1))
+            y_train = y
+
+            # 4. Построение LSTM-модели
+            model = Sequential([
+                LSTM(50, activation='tanh', input_shape=(LOOK_BACK, 1)),
+                Dense(1)
+            ])
+            model.compile(optimizer='adam', loss='mse')
+
+            # 5. Обучение
+            model.fit(X_train, y_train, epochs=20, batch_size=16)
+
+            # 6. Прогноз на следующие 30 дней
+            # Для итеративного прогноза будем подставлять каждый новый прогноз в конец последовательности
+            last_sequence = y_scaled[-LOOK_BACK:].reshape(1, LOOK_BACK, 1)
+            forecast_scaled = []
+            for _ in range(30):
+                pred = model.predict(last_sequence)
+                forecast_scaled.append(pred[0,0])
+                # обновляем sequence
+                last_sequence = np.append(last_sequence[:,1:,:], [pred], axis=1)
+
+            # Отмасштабируем обратно
+            forecast = scaler.inverse_transform(np.array(forecast_scaled).reshape(-1,1)).flatten()
+
+            # 7. Формируем даты прогноза
+            last_date = df['ds'].max()
+            future_dates = pd.date_range(start=last_date + pd.Timedelta(days=1),
+                                        periods=30, freq='D')
+
+            # 8. Собираем итоговый словарь в том же формате
+            result = {
+                'historical': {
+                    'dates':  df['ds'].dt.strftime('%Y-%m-%d').tolist(),
+                    'values': df['y'].tolist()
+                },
+                'forecast': {
+                    'dates': future_dates.strftime('%Y-%m-%d').tolist(),
+                    #'yhat': list(np.round(forecast, 2))
+                    'yhat': list(map(lambda x: round(float(x), 2), forecast)),
+                }
+            }
+            return jsonify(result)
         
         # Форматируем результат
         result = {
