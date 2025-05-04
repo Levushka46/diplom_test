@@ -1,0 +1,52 @@
+/* Основные стили */
+body {
+    background-color: #f8f9fa;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+}
+
+/* Анимации */
+.card {
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 0.5rem 1rem rgba(0,0,0,.15)!important;
+}
+
+/* Кастомные цвета */
+.bg-primary {
+    background-color: #2c3e50!important;
+}
+
+.bg-info {
+    background-color: #3498db!important;
+}
+
+/* Адаптивные таблицы */
+.table-responsive {
+    overflow-x: auto;
+}
+
+/* Toast-уведомления */
+.toast {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 9999;
+}
+
+/* Отчеты */
+#reportsList .card {
+    cursor: pointer;
+    transition: transform 0.2s;
+}
+
+#reportsList .card:hover {
+    transform: translateY(-3px);
+}
+
+#reportDetails .card {
+    border: none;
+    box-shadow: 0 0.5rem 1rem rgba(0,0,0,.15);
+}

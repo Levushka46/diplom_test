@@ -1,0 +1,38 @@
+<div class="report-section">
+    <h4><i class="bi bi-graph-up"></i> Статистика продаж</h4>
+    <div class="row">
+        <div class="col-md-3">
+            <div class="card bg-light">
+                <div class="card-body">
+                    <h5>Общие продажи</h5>
+                    <p class="display-6">{{ stats.total_sales | round(2) }} ₽</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-light">
+                <div class="card-body">
+                    <h5>Среднее в день</h5>
+                    <p class="display-6">{{ stats.avg_daily | round(2) }} ₽</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="report-section mt-4">
+    <h4><i class="bi bi-magic"></i> Прогноз</h4>
+    <div id="forecastChart" style="height: 400px;"></div>
+</div>
+
+<div class="report-section mt-4">
+    <h4><i class="bi bi-activity"></i> Ожидаемый спрос</h4>
+    <ul class="list-group">
+        <li class="list-group-item">
+            Пиковая дата: <strong>{{ demand.peak_date }}</strong>
+        </li>
+        <li class="list-group-item">
+            Максимальный спрос: <strong>{{ demand.expected_demand | round(2) }} ₽</strong>
+        </li>
+    </ul>
+</div>

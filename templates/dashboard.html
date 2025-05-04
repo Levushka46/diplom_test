@@ -1,0 +1,327 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row">
+    <!-- Боковое меню -->
+    <div class="col-md-3 mb-4">
+        <div class="card shadow-sm">
+            <div class="card-header bg-info text-white">
+                <i class="bi bi-menu-button"></i> Навигация
+            </div>
+            <div class="list-group list-group-flush">
+                <a href="#data" 
+                   class="list-group-item list-group-item-action active" 
+                   data-bs-toggle="tab">
+                    <i class="bi bi-database"></i> Данные
+                </a>
+                <a href="#forecast" 
+                   class="list-group-item list-group-item-action" 
+                   data-bs-toggle="tab">
+                    <i class="bi bi-magic"></i> Прогнозирование
+                </a>
+                <a href="#reports" 
+                   class="list-group-item list-group-item-action" 
+                   data-bs-toggle="tab">
+                    <i class="bi bi-file-bar-graph"></i> Отчеты
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Основной контент -->
+    <div class="col-md-9">
+        <div class="tab-content">
+            
+            <!-- Вкладка "Данные" -->
+            <div class="tab-pane fade show active" id="data">
+                <div class="card shadow-sm mb-4">
+                    <div class="card-header bg-success text-white">
+                        <i class="bi bi-upload"></i> Загрузка данных
+                    </div>
+                    <div class="card-body">
+                        <form method="POST" 
+                              action="{{ url_for('upload_file') }}" 
+                              enctype="multipart/form-data">
+                            <div class="mb-3">
+                                <input type="file" 
+                                       class="form-control" 
+                                       name="file" 
+                                       required
+                                       accept=".csv, .xlsx">
+                            </div>
+                            <button type="submit" 
+                                    class="btn btn-success w-100">
+                                <i class="bi bi-cloud-upload"></i> Загрузить
+                            </button>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- Список файлов -->
+                <div class="card shadow-sm">
+                    <div class="card-header bg-primary text-white">
+                        <i class="bi bi-files"></i> Ваши файлы
+                    </div>
+                    <div class="card-body">
+                        {% if files %}
+                        <div class="table-responsive">
+                            <table class="table table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>Имя файла</th>
+                                        <th>Тип</th>
+                                        <th>Размер</th>
+                                        <th>Дата загрузки</th>
+                                        <th>Действия</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for file in files %}
+                                    <tr>
+                                        <td>{{ file.filename }}</td>
+                                        <td>{{ file.mimetype }}</td>
+                                        <td>{{ (file.data|length / 1024)|round(2) }} KB</td>
+                                        <td>{{ file.uploaded_at.strftime('%d.%m.%Y %H:%M') }}</td>
+                                        <td>
+                                            <div class="btn-group">
+                                                <a href="{{ url_for('download_file', file_id=file.id) }}" 
+                                                   class="btn btn-sm btn-primary">
+                                                   <i class="bi bi-download"></i>
+                                                </a>
+                                                <a href="{{ url_for('delete_file', file_id=file.id) }}" 
+                                                   class="btn btn-sm btn-danger"
+                                                   onclick="return confirm('Удалить файл?')">
+                                                   <i class="bi bi-trash"></i>
+                                                </a>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        {% else %}
+                        <div class="alert alert-info">
+                            <i class="bi bi-info-circle"></i> Нет загруженных файлов
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+           <!-- Вкладка "Прогнозирование" -->
+            <div class="tab-pane fade" id="forecast">
+                <div id="forecastResult" class="mt-4"></div>
+                <div class="card shadow-sm">
+                    <div class="card-header bg-warning text-dark">
+                        <i class="bi bi-graph-up-arrow"></i> Настройки прогноза
+                    </div>
+                    <div class="card-body">
+                        <!-- Выбор файла -->
+                        <div class="mb-4">
+                            <label class="form-label">Выберите файл данных</label>
+                            <select class="form-select" id="fileSelect">
+                                {% for file in files %}
+                                <option value="{{ file.id }}" 
+                                        data-start="{{ file.start_date.strftime('%Y-%m-%d') }}" 
+                                        data-end="{{ file.end_date.strftime('%Y-%m-%d') }}">
+                                    {{ file.filename }} ({{ file.start_date.date() }} - {{ file.end_date.date() }})
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <!-- Выбор категории -->
+                        <div class="mb-4">
+                            <label class="form-label">Категория товаров</label>
+                            <select class="form-select" id="categorySelect">
+                                {% for file in files %}
+                                    {% for category in file.categories %}
+                                    <option value="{{ category }}" data-file="{{ file.id }}">{{ category }}</option>
+                                    {% endfor %}
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <!-- Выбор дат -->
+                        <div class="row g-3 mb-4">
+                            <div class="col-md-6">
+                                <label class="form-label">Дата начала прогноза</label>
+                                <input type="date" class="form-control" id="forecastStart">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Дата окончания прогноза</label>
+                                <input type="date" class="form-control" id="forecastEnd">
+                            </div>
+                        </div>
+
+                        <!-- Выбор модели -->
+                        <div class="mb-4">
+                            <label class="form-label">Модель прогнозирования</label>
+                            <select class="form-select" id="modelSelect">
+                                <option value="prophet">Prophet (Facebook)</option>
+                                <option value="arima">ARIMA</option>
+                                <option value="lstm">LSTM Network</option>
+                            </select>
+                        </div>
+
+                        <button id="forecastButton" 
+                                class="btn btn-danger w-100" 
+                                onclick="runForecast()">
+                            <i class="bi bi-lightning-charge"></i> Построить прогноз
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Вкладка "Отчеты" -->
+            <div class="tab-pane fade" id="reports">
+                <div class="card shadow-sm">
+                    <div class="card-header bg-info text-white">
+                        <i class="bi bi-pie-chart"></i> Отчеты
+                    </div>
+                    <div class="card-body">
+                        <!-- Фильтры -->
+                        <div class="row mb-4">
+                            <div class="col-md-4">
+                                <select class="form-select" id="reportFilter">
+                                    <option>Все отчеты</option>
+                                    <option>Prophet</option>
+                                    <option>ARIMA</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Список отчетов -->
+                        <div id="reportsList" class="mb-4">
+                            <!-- Динамически загружаемые отчеты -->
+                        </div>
+
+                        <!-- Детали отчета -->
+                        <div id="reportDetails">
+                            <div class="card">
+                                <div class="card-body">
+                                    <div id="statsSection"></div>
+                                    <div id="forecastChart" style="height: 400px;"></div>
+                                    <div id="demandSection" class="mt-4"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.plot.ly/plotly-2.18.2.min.js"></script>
+<script>
+// Генерация отчетов
+function generateReport(type) {
+    fetch(`/generate-report?type=${type}`)
+    .then(response => {
+        if (!response.ok) throw new Error('Ошибка сервера');
+        return response.json();
+    })
+    .then(data => {
+        const plotDiv = document.getElementById('plotlyChart');
+        const textDiv = document.getElementById('textReport');
+        
+        if (data.plot) {
+            plotDiv.style.display = 'block';
+            textDiv.classList.add('d-none');
+            Plotly.newPlot(plotDiv, data.plot.data, data.plot.layout);
+        } else if (data.text) {
+            plotDiv.style.display = 'none';
+            textDiv.classList.remove('d-none');
+            document.getElementById('reportContent').textContent = data.text;
+        }
+    })
+    .catch(error => {
+        alert(error.message);
+    });
+}
+
+function renderForecast(data) {
+    const traces = [
+        {
+            x: data.historical.dates,
+            y: data.historical.values,
+            name: 'Исторические данные',
+            mode: 'lines+markers'
+        },
+        {
+            x: data.forecast.dates,
+            y: data.forecast.yhat,
+            name: 'Прогноз',
+            line: {color: 'orange'}
+        }
+    ];
+    
+    Plotly.newPlot('forecastChart', traces, {
+        title: 'Прогноз продаж',
+        xaxis: {title: 'Дата'},
+        yaxis: {title: 'Продажи'}
+    });
+}
+
+function showError(message) {
+    const alertDiv = document.createElement('div');
+    alertDiv.className = 'alert alert-danger mt-3';
+    alertDiv.innerHTML = `
+        <i class="bi bi-exclamation-triangle"></i>
+        ${message}
+    `;
+    
+    const resultContainer = document.getElementById('forecastResult');
+    if (resultContainer) {
+        resultContainer.innerHTML = '';
+        resultContainer.appendChild(alertDiv);
+    } else {
+        console.error('Элемент forecastResult не найден');
+    }
+}
+
+function runForecast() {
+    const button = document.getElementById('forecastButton');
+    if (!button) {
+        console.error('Кнопка не найдена!');
+        return;
+    }
+    
+    button.disabled = true;
+    button.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Обработка...';
+
+    fetch('/forecast', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            file_id: document.getElementById('fileSelect').value,
+            category: document.getElementById('categorySelect').value
+        })
+    })
+    .then(response => {
+        if (!response.ok) {
+            return response.json().then(err => { throw new Error(err.error) });
+        }
+        return response.json();
+    })
+    .then(data => {
+        if (data && data.historical && data.forecast) {
+            renderForecast(data);
+        } else {
+            throw new Error('Некорректный формат ответа');
+        }
+    })
+    .catch(error => {
+        showError(`Ошибка: ${error.message}`);
+    })
+    .finally(() => {
+        button.disabled = false;
+        button.innerHTML = '<i class="bi bi-lightning-charge"></i> Построить прогноз';
+    });
+}
+</script>
+{% endblock %}
