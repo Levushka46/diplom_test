@@ -299,7 +299,8 @@ function runForecast() {
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({
             file_id: document.getElementById('fileSelect').value,
-            category: document.getElementById('categorySelect').value
+            category: document.getElementById('categorySelect').value,
+            model: document.getElementById('modelSelect').value
         })
     })
     .then(response => {

@@ -8,6 +8,7 @@ import plotly.express as px
 from io import BytesIO, StringIO
 import os
 from statsmodels.tsa.arima.model import ARIMA
+from pmdarima import auto_arima
 from prophet import Prophet
 
 
@@ -191,6 +192,7 @@ def forecast():
         # Получаем данные из запроса
         file_id = request.json.get('file_id')
         category = request.json.get('category')
+        model = request.json.get('model')
         
         # Получаем файл из БД
         file = File.query.get(file_id)
@@ -201,19 +203,72 @@ def forecast():
         df = pd.read_csv(BytesIO(file.data))
         df = df[df['category'] == category]
         
-        # Готовим данные для Prophet
-        df = df.rename(columns={'date': 'ds', 'value': 'y'})
-        df['ds'] = pd.to_datetime(df['ds'])
-        
-        # Создаем и обучаем модель
-        m = Prophet()
-        m.fit(df)
-        
-        # Создаем будущие даты
-        future = m.make_future_dataframe(periods=30)
-        
-        # Прогнозируем
-        forecast = m.predict(future)
+        if model == 'prophet':
+            # Готовим данные для Prophet
+            df = df.rename(columns={'date': 'ds', 'value': 'y'})
+            df['ds'] = pd.to_datetime(df['ds'])
+
+            # Создаем и обучаем модель
+            m = Prophet()
+            m.fit(df)
+            
+            # Создаем будущие даты
+            future = m.make_future_dataframe(periods=30)
+            
+            # Прогнозируем
+            forecast = m.predict(future)
+
+        elif model == 'arima':
+            # 1. Загрузка данных и подготовка
+            # Предполагается, что у вас есть DataFrame df с колонками 'date' и 'value'
+            df['date'] = pd.to_datetime(df['date'])
+            df = df.set_index('date').asfreq('D')   # задаём дневную частоту (при необходимости менять)
+            df['value'].interpolate(method='time', inplace=True)  # заполняем пропуски
+
+            # 2. Разделение на train и test (опционально)
+            #train = df.iloc[:-30]   # всё, кроме последних 30 дней
+            #test  = df.iloc[-30:]   # последние 30 дней для валидации
+            train = df
+
+            # 3. Подбор гиперпараметров (p, d, q) автоматически
+            stepwise_model = auto_arima(train['value'], start_p=0, start_q=0,
+                                        max_p=5, max_q=5, m=7,          # m=7 — для недельной сезонности
+                                        start_P=0, seasonal=True,       # если есть сезонность
+                                        d=None, D=1, trace=True,
+                                        error_action='ignore',
+                                        suppress_warnings=True,
+                                        stepwise=True)
+
+            print(stepwise_model.summary())
+
+            # 4. Обучение финальной модели ARIMA
+            # Если вы хотите взять параметры из auto_arima:
+            order = stepwise_model.order     # (p, d, q)
+            seasonal_order = stepwise_model.seasonal_order  # (P, D, Q, m)
+
+            model = ARIMA(train['value'], order=order, seasonal_order=seasonal_order)
+            fitted = model.fit()
+            print(fitted.summary())
+
+            # 5. Прогноз на будущие дни
+            n_periods = 30
+            forecast_result = fitted.get_forecast(steps=n_periods)
+            forecast = forecast_result.predicted_mean
+            conf_int = forecast_result.conf_int(alpha=0.05)
+
+            # 6. Визуализация
+            plt.figure(figsize=(12,6))
+            plt.plot(train.index, train['value'], label='Train')
+            plt.plot(test.index, test['value'], label='Test', color='orange')
+            plt.plot(forecast.index, forecast, label='Forecast', color='green')
+            plt.fill_between(forecast.index,
+                            conf_int.iloc[:, 0],
+                            conf_int.iloc[:, 1], color='lightgreen', alpha=0.5)
+            plt.legend()
+            plt.title('ARIMA Forecast of Sales')
+            plt.xlabel('Date')
+            plt.ylabel('Sales')
+            plt.show()
         
         # Форматируем результат
         result = {
