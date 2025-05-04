@@ -181,30 +181,58 @@
                         <i class="bi bi-pie-chart"></i> Отчеты
                     </div>
                     <div class="card-body">
-                        <!-- Фильтры -->
-                        <div class="row mb-4">
-                            <div class="col-md-4">
-                                <select class="form-select" id="reportFilter">
-                                    <option>Все отчеты</option>
-                                    <option>Prophet</option>
-                                    <option>ARIMA</option>
-                                </select>
-                            </div>
-                        </div>
+                        <!-- Навигация по моделям -->
+                        <ul class="nav nav-tabs mb-4" id="modelTabs" role="tablist">
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link active" id="prophet-tab" data-bs-toggle="tab" data-bs-target="#prophet" type="button" role="tab">Prophet</button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="arima-tab" data-bs-toggle="tab" data-bs-target="#arima" type="button" role="tab">ARIMA</button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="lstm-tab" data-bs-toggle="tab" data-bs-target="#lstm" type="button" role="tab">LSTM</button>
+                            </li>
+                        </ul>
 
-                        <!-- Список отчетов -->
-                        <div id="reportsList" class="mb-4">
-                            <!-- Динамически загружаемые отчеты -->
-                        </div>
-
-                        <!-- Детали отчета -->
-                        <div id="reportDetails">
-                            <div class="card">
-                                <div class="card-body">
-                                    <div id="statsSection"></div>
-                                    <div id="forecastChart" style="height: 400px;"></div>
-                                    <div id="demandSection" class="mt-4"></div>
+                        <div class="tab-content">
+                            <!-- Prophet -->
+                            <div class="tab-pane fade show active" id="prophet" role="tabpanel">
+                                <div class="mb-3">
+                                    <label class="form-label">Выберите отчёт Prophet</label>
+                                    <select class="form-select report-select" data-model="prophet">
+                                        <option value="" selected disabled>-- Выберите файл --</option>
+                                        {% for rpt in reports if rpt.model_type == 'prophet' %}
+                                        <option value="{{ rpt.id }}">{{ rpt.file_id }} {{ rpt.file.filename }} ({{ rpt.created_at.strftime('%d.%m.%Y') }})</option>
+                                        {% endfor %}
+                                    </select>
                                 </div>
+                                <div id="chart-prophet" class="report-chart" style="height:400px;"></div>
+                            </div>
+                            <!-- ARIMA -->
+                            <div class="tab-pane fade" id="arima" role="tabpanel">
+                                <div class="mb-3">
+                                    <label class="form-label">Выберите отчёт ARIMA</label>
+                                    <select class="form-select report-select" data-model="arima">
+                                        <option value="" selected disabled>-- Выберите файл --</option>
+                                        {% for rpt in reports if rpt.model_type == 'arima' %}
+                                        <option value="{{ rpt.id }}">{{ rpt.file_id }} {{ rpt.file.filename }} ({{ rpt.created_at.strftime('%d.%m.%Y') }})</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div id="chart-arima" class="report-chart" style="height:400px;"></div>
+                            </div>
+                            <!-- LSTM -->
+                            <div class="tab-pane fade" id="lstm" role="tabpanel">
+                                <div class="mb-3">
+                                    <label class="form-label">Выберите отчёт LSTM</label>
+                                    <select class="form-select report-select" data-model="lstm">
+                                        <option value="" selected disabled>-- Выберите файл --</option>
+                                        {% for rpt in reports if rpt.model_type == 'lstm' %}
+                                        <option value="{{ rpt.id }}">{{ rpt.file_id }} {{ rpt.file.filename }} ({{ rpt.created_at.strftime('%d.%m.%Y') }})</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div id="chart-lstm" class="report-chart" style="height:400px;"></div>
                             </div>
                         </div>
                     </div>
@@ -324,5 +352,46 @@ function runForecast() {
         button.innerHTML = '<i class="bi bi-lightning-charge"></i> Построить прогноз';
     });
 }
+
+// Обработчик выбора отчёта
+document.querySelectorAll('.report-select').forEach(select => {
+    select.addEventListener('change', () => {
+        const model = select.dataset.model;
+        const reportId = select.value;
+        const chartDiv = document.getElementById(`chart-${model}`);
+
+        // Очищаем предыдущий график
+        chartDiv.innerHTML = '';
+        if (!reportId) return;
+
+        fetch(`/report-data?report_id=${reportId}`)
+            .then(res => res.json())
+            .then(data => {
+                const traces = [
+                    {
+                        x: data.historical.dates,
+                        y: data.historical.values,
+                        name: 'Исторические',
+                        mode: 'lines+markers'
+                    },
+                    {
+                        x: data.forecast.dates,
+                        y: data.forecast.yhat,
+                        name: 'Прогноз',
+                        mode: 'lines'
+                    }
+                ];
+                Plotly.newPlot(chartDiv, traces, {
+                    title: `Отчёт ${model.toUpperCase()}`,
+                    xaxis: { title: 'Дата' },
+                    yaxis: { title: 'Значение' }
+                });
+            })
+            .catch(err => {
+                chartDiv.innerHTML = `<div class="alert alert-danger">Ошибка загрузки отчёта</div>`;
+                console.error(err);
+            });
+    });
+});
 </script>
 {% endblock %}

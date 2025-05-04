@@ -7,6 +7,7 @@ import pandas as pd
 import plotly.express as px
 from io import BytesIO, StringIO
 import os
+from sqlalchemy.orm import joinedload
 from statsmodels.tsa.arima.model import ARIMA
 from pmdarima import auto_arima
 from prophet import Prophet
@@ -116,7 +117,7 @@ def upload_file():
         db.session.add(new_file)
         db.session.commit()
 
-        return jsonify({'message': 'Файл успешно загружен'})
+        return redirect(url_for('dashboard'))
 
     except Exception as e:
         return jsonify({'error': f'Ошибка: {str(e)}'}), 500
@@ -187,7 +188,8 @@ def home():
 @login_required
 def dashboard():
     files = File.query.filter_by(user_id=current_user.id).all()
-    return render_template('dashboard.html', files=files)
+    reports = ForecastResult.query.options(joinedload(ForecastResult.file)).filter_by(user_id=current_user.id).all()
+    return render_template('dashboard.html', files=files, reports=reports)
 
 @app.route('/forecast', methods=['POST'])
 @login_required
@@ -196,7 +198,7 @@ def forecast():
         # Получаем данные из запроса
         file_id = request.json.get('file_id')
         category = request.json.get('category')
-        model = request.json.get('model')
+        model_type = request.json.get('model')
         
         # Получаем файл из БД
         file = File.query.get(file_id)
@@ -207,7 +209,7 @@ def forecast():
         df = pd.read_csv(BytesIO(file.data))
         df = df[df['category'] == category]
         
-        if model == 'prophet':
+        if model_type == 'prophet':
             # Готовим данные для Prophet
             df = df.rename(columns={'date': 'ds', 'value': 'y'})
             df['ds'] = pd.to_datetime(df['ds'])
@@ -222,7 +224,7 @@ def forecast():
             # Прогнозируем
             forecast = m.predict(future)
 
-        elif model == 'arima':
+        elif model_type == 'arima':
             # 1. Загрузка и подготовка данных
             df['date'] = pd.to_datetime(df['date'])
             df = df.set_index('date').asfreq('D')
@@ -276,7 +278,7 @@ def forecast():
                 'yhat_upper': conf_int.iloc[:, 1].values
             })
 
-        elif model == 'lstm':
+        elif model_type == 'lstm':
             # 1. Загрузка и подготовка данных
             # Предполагается, что у вас есть DataFrame df с колонками 'date' и 'value'
             df['date'] = pd.to_datetime(df['date'])
@@ -353,6 +355,7 @@ def forecast():
                     'yhat': list(map(lambda x: round(float(x), 2), forecast)),
                 }
             }
+            save_forecast_result(file_id, model_type, result)
             return jsonify(result)
         
         # Форматируем результат
@@ -368,12 +371,54 @@ def forecast():
                 'yhat_upper': forecast['yhat_upper'].round(2).tolist()
             }
         }
-        
+        save_forecast_result(file_id, model_type, result)
         return jsonify(result)
     
     except Exception as e:
         app.logger.error(f'Error in forecast: {str(e)}')
         return jsonify({'error': str(e)}), 500
+
+def save_forecast_result(file_id, model_type, report_data):
+    try:
+        forecast_result = ForecastResult(
+            user_id=current_user.id,
+            file_id=file_id,
+            model_type=model_type,
+            report_data=report_data
+        )
+        db.session.add(forecast_result)
+        db.session.commit()
+    except Exception as e:
+        app.logger.error(f'Error saving forecast result: {str(e)}')
+        db.session.rollback()
+
+
+@app.route('/report-data', methods=['GET'])
+def report_data():
+    # 1. Получаем report_id из query string
+    report_id = request.args.get('report_id')
+    if not report_id:
+        return jsonify({'error': 'report_id is required'}), 400
+
+    # 2. Пытаемся найти запись в БД
+    try:
+        report_id = int(report_id)
+    except ValueError:
+        return jsonify({'error': 'report_id must be an integer'}), 400
+
+    report = ForecastResult.query.get(report_id)
+    if not report:
+        return jsonify({'error': 'Report not found'}), 404
+
+    # 3. Достаём сохранённый JSON из модели.
+    #    Предполагаем, что у вас есть поле `result` типа JSON или Text
+    #    со структурой {'historical': {...}, 'forecast': {...}}
+    result = report.report_data
+    # Если у вас это строка, а не JSONB/JSONField, можете раскомментировать:
+    # result = json.loads(report.result)
+
+    # 4. Отдаём напрямую клиенту
+    return jsonify(result)
 
 
 if __name__ == '__main__':
