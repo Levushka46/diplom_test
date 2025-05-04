@@ -202,7 +202,7 @@
                                     <select class="form-select report-select" data-model="prophet">
                                         <option value="" selected disabled>-- Выберите файл --</option>
                                         {% for rpt in reports if rpt.model_type == 'prophet' %}
-                                        <option value="{{ rpt.id }}">{{ rpt.file_id }} {{ rpt.file.filename }} ({{ rpt.created_at.strftime('%d.%m.%Y') }})</option>
+                                        <option value="{{ rpt.id }}">{{ rpt.id }} {{ rpt.file.filename }} ({{ rpt.created_at.strftime('%d.%m.%Y') }})</option>
                                         {% endfor %}
                                     </select>
                                 </div>
@@ -215,7 +215,7 @@
                                     <select class="form-select report-select" data-model="arima">
                                         <option value="" selected disabled>-- Выберите файл --</option>
                                         {% for rpt in reports if rpt.model_type == 'arima' %}
-                                        <option value="{{ rpt.id }}">{{ rpt.file_id }} {{ rpt.file.filename }} ({{ rpt.created_at.strftime('%d.%m.%Y') }})</option>
+                                        <option value="{{ rpt.id }}">{{ rpt.id }} {{ rpt.file.filename }} ({{ rpt.created_at.strftime('%d.%m.%Y') }})</option>
                                         {% endfor %}
                                     </select>
                                 </div>
@@ -228,7 +228,7 @@
                                     <select class="form-select report-select" data-model="lstm">
                                         <option value="" selected disabled>-- Выберите файл --</option>
                                         {% for rpt in reports if rpt.model_type == 'lstm' %}
-                                        <option value="{{ rpt.id }}">{{ rpt.file_id }} {{ rpt.file.filename }} ({{ rpt.created_at.strftime('%d.%m.%Y') }})</option>
+                                        <option value="{{ rpt.id }}">{{ rpt.id }} {{ rpt.file.filename }} ({{ rpt.created_at.strftime('%d.%m.%Y') }})</option>
                                         {% endfor %}
                                     </select>
                                 </div>
@@ -273,6 +273,7 @@ function generateReport(type) {
 }
 
 function renderForecast(data) {
+    return;
     const traces = [
         {
             x: data.historical.dates,
@@ -298,6 +299,23 @@ function renderForecast(data) {
 function showError(message) {
     const alertDiv = document.createElement('div');
     alertDiv.className = 'alert alert-danger mt-3';
+    alertDiv.innerHTML = `
+        <i class="bi bi-exclamation-triangle"></i>
+        ${message}
+    `;
+    
+    const resultContainer = document.getElementById('forecastResult');
+    if (resultContainer) {
+        resultContainer.innerHTML = '';
+        resultContainer.appendChild(alertDiv);
+    } else {
+        console.error('Элемент forecastResult не найден');
+    }
+}
+
+function showSuccess(message) {
+    const alertDiv = document.createElement('div');
+    alertDiv.className = 'alert alert-success mt-3';
     alertDiv.innerHTML = `
         <i class="bi bi-exclamation-triangle"></i>
         ${message}
@@ -339,7 +357,12 @@ function runForecast() {
     })
     .then(data => {
         if (data && data.historical && data.forecast) {
-            renderForecast(data);
+            showSuccess('Прогноз успешно построен!');
+            // перезагружаем страницу через 3 секунды
+            setTimeout(() => {
+                location.reload();
+            }, 3000);
+            //renderForecast(data);
         } else {
             throw new Error('Некорректный формат ответа');
         }
