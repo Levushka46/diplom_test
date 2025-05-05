@@ -2,12 +2,18 @@
 
 {% block content %}
 <div class="container mt-4">
-    <!-- Заголовок -->
-    <div class="row mb-4">
-        <div class="col">
-            <h2><i class="bi bi-database"></i> Управление данными</h2>
-        </div>
-    </div>
+
+    {# Flash-сообщения #}
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, msg in messages %}
+          <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+            {{ msg }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Закрыть"></button>
+          </div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
 
     <!-- Форма загрузки -->
     <div class="card shadow mb-4">

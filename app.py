@@ -34,6 +34,12 @@ app.config.update(
 db.init_app(app)
 login_manager = LoginManager(app)
 login_manager.login_view = 'login'
+# Разрешённые расширения
+ALLOWED_EXTENSIONS = {'csv', 'xlsx'}
+
+def allowed_file(filename):
+    return '.' in filename and \
+           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -90,41 +96,57 @@ def logout():
 @app.route('/upload', methods=['POST'])
 @login_required
 def upload_file():
+    # 1) наличие файла
     if 'file' not in request.files:
-        return jsonify({'error': 'Файл не выбран'}), 400
+        flash('Файл не прикреплён', 'danger')
+        return redirect(url_for('dashboard'))
     
     file = request.files['file']
     if file.filename == '':
-        return jsonify({'error': 'Неверное имя файла'}), 400
-
+        flash('Имя файла пустое', 'danger')
+        return redirect(url_for('dashboard'))
+    
+    # 2) проверяем расширение
+    if not allowed_file(file.filename):
+        flash('Недопустимый формат. Разрешено: CSV, XLSX', 'danger')
+        return redirect(url_for('dashboard'))
+    
+    filename = secure_filename(file.filename)
+    data = file.read()
+    if not data:
+        flash('Файл пустой', 'danger')
+        return redirect(url_for('dashboard'))
+    
+    # 3) попытка распарсить датафрейм
     try:
-        # Важно: сохраняем содержимое файла в переменную
-        file_data = file.read()
-        
-        # Проверка что файл не пустой
-        if len(file_data) == 0:
-            return jsonify({'error': 'Файл пуст'}), 400
-            
-        # Чтение для получения метаданных
-        df = pd.read_csv(BytesIO(file_data))
-        
-        # Сохранение в БД с исходными данными
+        ext = filename.rsplit('.', 1)[1].lower()
+        if ext == 'csv':
+            df = pd.read_csv(BytesIO(data))
+        else:  # xlsx
+            df = pd.read_excel(BytesIO(data))
+    except Exception as e:
+        flash(f'Не удалось прочитать файл: {e}', 'danger')
+        return redirect(url_for('dashboard'))
+    
+    # 4) сохраняем в БД
+    try:
         new_file = File(
-            filename=secure_filename(file.filename),
-            data=file_data,  # Используем сохраненные данные
+            filename=filename,
+            data=data,
             mimetype=file.mimetype,
             user_id=current_user.id,
-            categories=df['category'].unique().tolist(),
+            categories=df['category'].dropna().unique().tolist(),
             start_date=pd.to_datetime(df['date']).min(),
             end_date=pd.to_datetime(df['date']).max()
         )
         db.session.add(new_file)
         db.session.commit()
-
-        return redirect(url_for('dashboard'))
-
+        flash('Файл успешно загружен', 'success')
     except Exception as e:
-        return jsonify({'error': f'Ошибка: {str(e)}'}), 500
+        db.session.rollback()
+        flash(f'Ошибка при сохранении файла: {e}', 'danger')
+    
+    return redirect(url_for('dashboard'))
 
 @app.route('/download/<int:file_id>')
 @login_required
