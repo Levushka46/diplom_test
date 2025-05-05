@@ -10,11 +10,11 @@ import pandas as pd
 import plotly.express as px
 
 from pmdarima import auto_arima
-from prophet import Prophet
-from sklearn.preprocessing import MinMaxScaler
+from sklearn.preprocessing import MinMaxScaler, PolynomialFeatures 
+from sklearn.linear_model import LinearRegression
 from sqlalchemy.orm import joinedload
 from statsmodels.tsa.arima.model import ARIMA
-
+import datetime
 from tensorflow.keras.layers import Dense, LSTM
 from tensorflow.keras.models import Sequential
 
@@ -255,20 +255,57 @@ def forecast():
         df = pd.read_csv(BytesIO(file.data))
         df = df[df['category'] == category]
         
-        if model_type == 'prophet':
-            # Готовим данные для Prophet
-            df = df.rename(columns={'date': 'ds', 'value': 'y'})
-            df['ds'] = pd.to_datetime(df['ds'])
+        if model_type == 'polynomial':
+            # 1. Переименуем колонки и приведём дату
+            df_prop = df.rename(columns={'date': 'ds', 'value': 'y'}).copy()
+            df_prop['ds'] = pd.to_datetime(df_prop['ds'])
+            
+            # 2. Переведём дату в числовой признак (ordinal)
+            df_prop['ordinal'] = df_prop['ds'].map(datetime.datetime.toordinal)
+            X = df_prop[['ordinal']].values     # shape = (n_samples, 1)
+            y = df_prop['y'].values              # shape = (n_samples,)
+            
+            # 3. Создадим полиномиальные фичи (здесь degree=3)
+            poly = PolynomialFeatures(degree=3, include_bias=False)
+            X_poly = poly.fit_transform(X)       # shape = (n_samples, 3)
+            
+            # 4. Обучим линейную регрессию на полиномиальных фичах
+            linreg = LinearRegression()
+            linreg.fit(X_poly, y)
+            
+            # 5. Сгенерируем будущие даты (30 дней вперёд)
+            last_date = df_prop['ds'].max()
+            future_dates = [last_date + pd.Timedelta(days=i) for i in range(1, 31)]
+            future_ordinals = np.array([d.toordinal() for d in future_dates]).reshape(-1, 1)
+            X_future_poly = poly.transform(future_ordinals)
+            
+            # 6. Спрогнозируем значения
+            y_pred = linreg.predict(X_future_poly)
+            
+            # 7. Соберём DataFrame с прогнозом
+            forecast = pd.DataFrame({
+                'ds': future_dates,
+                'yhat':       np.round(y_pred, 2),
+                # Интервалов доверия у sklearn-регрессии нет, 
+                # поэтому просто повторим точечный прогноз:
+                'yhat_lower': np.round(y_pred, 2),
+                'yhat_upper': np.round(y_pred, 2),
+            })
 
-            # Создаем и обучаем модель
-            m = Prophet()
-            m.fit(df)
-            
-            # Создаем будущие даты
-            future = m.make_future_dataframe(periods=30)
-            
-            # Прогнозируем
-            forecast = m.predict(future)
+            result = {
+                'historical': {
+                    'dates':  df_prop['ds'].dt.strftime('%Y-%m-%d').tolist(),
+                    'values': df_prop['y'].tolist()
+                },
+                'forecast': {
+                    'dates': forecast['ds'].dt.strftime('%Y-%m-%d').tolist(),
+                    'yhat': forecast['yhat'].round(2).tolist(),
+                    'yhat_lower': forecast['yhat_lower'].round(2).tolist(),
+                    'yhat_upper': forecast['yhat_upper'].round(2).tolist()
+                }
+            }
+            save_forecast_result(file_id, model_type, result)
+            return jsonify(result)
 
         elif model_type == 'arima':
             # 1. Загрузка и подготовка данных
@@ -276,7 +313,6 @@ def forecast():
             df = df.set_index('date').asfreq('D')
             df['value'].interpolate(method='time', inplace=True)
 
-            # Переименуем для единообразия с Prophet
             df = df.rename(columns={'value': 'y'})
             df = df.reset_index().rename(columns={'date': 'ds'})
             df['ds'] = pd.to_datetime(df['ds'])

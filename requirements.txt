@@ -8,3 +8,4 @@ statsmodels
 pmdarima
 numpy==1.26.4
 tensorflow-cpu
+scikit-learn

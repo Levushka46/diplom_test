@@ -168,7 +168,7 @@
                         <div class="mb-4">
                             <label class="form-label">Модель прогнозирования</label>
                             <select class="form-select" id="modelSelect">
-                                <option value="prophet">Prophet</option>
+                                <option value="polynomial">Polynomial</option>
                                 <option value="arima">ARIMA</option>
                                 <option value="lstm">LSTM Network</option>
                             </select>
@@ -262,7 +262,7 @@
                         <!-- Навигация по моделям -->
                         <ul class="nav nav-tabs mb-4" id="modelTabs" role="tablist">
                             <li class="nav-item" role="presentation">
-                                <button class="nav-link active" id="prophet-tab" data-bs-toggle="tab" data-bs-target="#prophet" type="button" role="tab">Prophet</button>
+                                <button class="nav-link active" id="polynomial-tab" data-bs-toggle="tab" data-bs-target="#polynomial" type="button" role="tab">polynomial</button>
                             </li>
                             <li class="nav-item" role="presentation">
                                 <button class="nav-link" id="arima-tab" data-bs-toggle="tab" data-bs-target="#arima" type="button" role="tab">ARIMA</button>
@@ -273,18 +273,18 @@
                         </ul>
 
                         <div class="tab-content">
-                            <!-- Prophet -->
-                            <div class="tab-pane fade show active" id="prophet" role="tabpanel">
+                            <!-- polynomial -->
+                            <div class="tab-pane fade show active" id="polynomial" role="tabpanel">
                                 <div class="mb-3">
-                                    <label class="form-label">Выберите отчёт Prophet</label>
-                                    <select class="form-select report-select" data-model="prophet">
+                                    <label class="form-label">Выберите отчёт polynomial</label>
+                                    <select class="form-select report-select" data-model="polynomial">
                                         <option value="" selected disabled>-- Выберите файл --</option>
-                                        {% for rpt in reports if rpt.model_type == 'prophet' %}
+                                        {% for rpt in reports if rpt.model_type == 'polynomial' %}
                                         <option value="{{ rpt.id }}">{{ rpt.id }} {{ rpt.file.filename }} ({{ rpt.created_at.strftime('%d.%m.%Y') }})</option>
                                         {% endfor %}
                                     </select>
                                 </div>
-                                <div id="chart-prophet" class="report-chart" style="height:400px;"></div>
+                                <div id="chart-polynomial" class="report-chart" style="height:400px;"></div>
                             </div>
                             <!-- ARIMA -->
                             <div class="tab-pane fade" id="arima" role="tabpanel">
