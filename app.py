@@ -173,7 +173,7 @@ def generate_report():
             return jsonify({'plot': fig_dict})
         
         elif report_type == 'demand':
-            fig = px.bar(df, x='category', y='value', title='Спрос на товары')
+            fig = px.bar(df, x='category', y='amount', title='Спрос на товары')
             fig_dict = fig.to_dict()
             fig_dict['data'][0]['x'] = list(fig_dict['data'][0]['x'])
             return jsonify({'plot': fig_dict})
@@ -191,9 +191,23 @@ def home():
 @app.route('/dashboard')
 @login_required
 def dashboard():
+    # получаем все файлы и отчёты
     files = File.query.filter_by(user_id=current_user.id).all()
-    reports = ForecastResult.query.options(joinedload(ForecastResult.file)).filter_by(user_id=current_user.id).all()
-    return render_template('dashboard.html', files=files, reports=reports)
+    reports = (ForecastResult.query
+               .options(joinedload(ForecastResult.file))
+               .filter_by(user_id=current_user.id)
+               .all())
+
+    unique_cats = set()
+    for f in files:
+        if f.categories:
+            unique_cats.update(f.categories)
+    categories = sorted(unique_cats)
+
+    return render_template('dashboard.html',
+                           files=files,
+                           reports=reports,
+                           categories=categories)
 
 @app.route('/forecast', methods=['POST'])
 @login_required

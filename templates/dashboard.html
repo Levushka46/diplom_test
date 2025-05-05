@@ -138,13 +138,12 @@
 
                         <!-- Выбор категории -->
                         <div class="mb-4">
-                            <label class="form-label">Категория товаров</label>
+                            <label class="form-label">Выберите категорию</label>
                             <select class="form-select" id="categorySelect">
-                                {% for file in files %}
-                                    {% for category in file.categories %}
-                                    <option value="{{ category }}" data-file="{{ file.id }}">{{ category }}</option>
-                                    {% endfor %}
-                                {% endfor %}
+                            <option value="">Все категории</option>
+                            {% for cat in categories %}
+                                <option value="{{ cat }}">{{ cat }}</option>
+                            {% endfor %}
                             </select>
                         </div>
 
