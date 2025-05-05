@@ -17,7 +17,7 @@ from statsmodels.tsa.arima.model import ARIMA
 import datetime
 from tensorflow.keras.layers import Dense, LSTM
 from tensorflow.keras.models import Sequential
-
+from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
 from models import db, File, ForecastResult, User
 
 
@@ -361,71 +361,110 @@ def forecast():
             })
 
         elif model_type == 'lstm':
+            epoch_const = 150
+            # ----------------------------------------
+            # Колбэки для контроля обучения
+            # ----------------------------------------
+            callbacks = [
+                EarlyStopping(monitor='val_loss', patience=epoch_const/3, min_delta=1e-4, restore_best_weights=True),
+                ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=10)
+            ]
+
+            # ----------------------------------------
             # 1. Загрузка и подготовка данных
-            # Предполагается, что у вас есть DataFrame df с колонками 'date' и 'value'
+            # ----------------------------------------
             df['date'] = pd.to_datetime(df['date'])
             df = df.set_index('date').asfreq('D')
             df['value'].interpolate(method='time', inplace=True)
+            df = (
+                df
+                .rename(columns={'value': 'y'})
+                .reset_index()
+                .rename(columns={'date': 'ds'})
+            )
 
-            # Переименуем столбцы для единообразия
-            df = df.rename(columns={'value': 'y'}).reset_index().rename(columns={'date': 'ds'})
-
+            # ----------------------------------------
             # 2. Масштабирование
+            # ----------------------------------------
             scaler = MinMaxScaler(feature_range=(0, 1))
             y_scaled = scaler.fit_transform(df['y'].values.reshape(-1, 1))
 
+            # ----------------------------------------
             # 3. Создание обучающих последовательностей
-            def create_sequences(data, look_back=14):
+            # ----------------------------------------
+            def create_sequences(data: np.ndarray, look_back: int):
                 X, y = [], []
                 for i in range(len(data) - look_back):
-                    X.append(data[i:(i + look_back), 0])
-                    y.append(data[i + look_back, 0])
+                    X.append(data[i : i + look_back, 0])   # взять прошлые look_back точек
+                    y.append(data[i + look_back, 0])       # предсказать следующую
                 return np.array(X), np.array(y)
 
-            LOOK_BACK = 7  # число дней для входной последовательности
-            X, y = create_sequences(y_scaled, look_back=LOOK_BACK)
-
-            # Разделим на train и test (оставим последние 30 точек для проверки)
-            #train_size = len(X) - 30
-            #X_train, X_test = X[:train_size], X[train_size:]
-            #y_train, y_test = y[:train_size], y[train_size:]
-
-            # Приведём входы к форме [samples, timesteps, features]
-            #X_train = X_train.reshape((X_train.shape[0], LOOK_BACK, 1))
-            #X_test  = X_test.reshape((X_test.shape[0], LOOK_BACK, 1))
-
+            LOOK_BACK = 30   # увеличили до 30 дней
+            X, y_train = create_sequences(y_scaled, look_back=LOOK_BACK)
+            # приводим к форме [samples, timesteps, features]
             X_train = X.reshape((X.shape[0], LOOK_BACK, 1))
-            y_train = y
 
+            # ----------------------------------------
             # 4. Построение LSTM-модели
+            # ----------------------------------------
             model = Sequential([
-                LSTM(50, activation='tanh', input_shape=(LOOK_BACK, 1)),
+                LSTM(
+                    64,
+                    return_sequences=True,
+                    dropout=0.2,
+                    recurrent_dropout=0.2,
+                    input_shape=(LOOK_BACK, 1)
+                ),
+                LSTM(32, dropout=0.2, recurrent_dropout=0.2),
                 Dense(1)
             ])
             model.compile(optimizer='adam', loss='mse')
 
+            # ----------------------------------------
             # 5. Обучение
-            model.fit(X_train, y_train, epochs=20, batch_size=16)
+            # ----------------------------------------
+            model.fit(
+                X_train, y_train,
+                epochs=epoch_const,
+                batch_size=32,
+                validation_split=0.1,  # 10% в валидацию
+                shuffle=False,         # важный момент для временных рядов
+                callbacks=callbacks
+            )
 
-            # 6. Прогноз на следующие 30 дней
-            # Для итеративного прогноза будем подставлять каждый новый прогноз в конец последовательности
-            last_sequence = y_scaled[-LOOK_BACK:].reshape(1, LOOK_BACK, 1)
+            # ----------------------------------------
+            # 6. Итеративный прогноз на 30 дней
+            # ----------------------------------------
+            last_sequence = y_scaled[-LOOK_BACK :].reshape(1, LOOK_BACK, 1)
             forecast_scaled = []
             for _ in range(30):
-                pred = model.predict(last_sequence)
-                forecast_scaled.append(pred[0,0])
-                # обновляем sequence
-                last_sequence = np.append(last_sequence[:,1:,:], [pred], axis=1)
+                pred = model.predict(last_sequence, verbose=0)
+                forecast_scaled.append(pred[0, 0])
+                # подставляем предсказание в конец окна
+                last_sequence = np.append(
+                    last_sequence[:, 1:, :],
+                    pred.reshape(1, 1, 1),
+                    axis=1
+                )
 
             # Отмасштабируем обратно
-            forecast = scaler.inverse_transform(np.array(forecast_scaled).reshape(-1,1)).flatten()
+            forecast = scaler.inverse_transform(
+                np.array(forecast_scaled).reshape(-1, 1)
+            ).flatten()
 
-            # 7. Формируем даты прогноза
+            # ----------------------------------------
+            # 7. Формирование дат прогноза
+            # ----------------------------------------
             last_date = df['ds'].max()
-            future_dates = pd.date_range(start=last_date + pd.Timedelta(days=1),
-                                        periods=30, freq='D')
+            future_dates = pd.date_range(
+                start=last_date + pd.Timedelta(days=1),
+                periods=30,
+                freq='D'
+            )
 
-            # 8. Собираем итоговый словарь в том же формате
+            # ----------------------------------------
+            # 8. Сборка результата и возврат
+            # ----------------------------------------
             result = {
                 'historical': {
                     'dates':  df['ds'].dt.strftime('%Y-%m-%d').tolist(),
@@ -433,28 +472,12 @@ def forecast():
                 },
                 'forecast': {
                     'dates': future_dates.strftime('%Y-%m-%d').tolist(),
-                    #'yhat': list(np.round(forecast, 2))
-                    'yhat': list(map(lambda x: round(float(x), 2), forecast)),
+                    'yhat':   [round(float(v), 2) for v in forecast]
                 }
             }
             save_forecast_result(file_id, model_type, result)
             return jsonify(result)
-        
-        # Форматируем результат
-        result = {
-            'historical': {
-                'dates': df['ds'].dt.strftime('%Y-%m-%d').tolist(),
-                'values': df['y'].tolist()
-            },
-            'forecast': {
-                'dates': forecast['ds'].dt.strftime('%Y-%m-%d').tolist(),
-                'yhat': forecast['yhat'].round(2).tolist(),
-                'yhat_lower': forecast['yhat_lower'].round(2).tolist(),
-                'yhat_upper': forecast['yhat_upper'].round(2).tolist()
-            }
-        }
-        save_forecast_result(file_id, model_type, result)
-        return jsonify(result)
+
     
     except Exception as e:
         app.logger.error(f'Error in forecast: {str(e)}')
