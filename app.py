@@ -1,20 +1,24 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, Response, jsonify
-from flask_login import LoginManager, login_user, logout_user, login_required, current_user
+import os
+from io import BytesIO, StringIO
+
+from flask import flash, Flask, jsonify, redirect, render_template, request, Response, url_for
+from flask_login import current_user, login_required, login_user, logout_user
 from werkzeug.utils import secure_filename
-from models import ForecastResult, db, User, File
-from datetime import datetime
+
+import numpy as np
 import pandas as pd
 import plotly.express as px
-from io import BytesIO, StringIO
-import os
-from sqlalchemy.orm import joinedload
-from statsmodels.tsa.arima.model import ARIMA
+
 from pmdarima import auto_arima
 from prophet import Prophet
-import numpy as np
 from sklearn.preprocessing import MinMaxScaler
+from sqlalchemy.orm import joinedload
+from statsmodels.tsa.arima.model import ARIMA
+
+from tensorflow.keras.layers import Dense, LSTM
 from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import LSTM, Dense
+
+from models import db, File, ForecastResult, User
 
 
 app = Flask(__name__)
