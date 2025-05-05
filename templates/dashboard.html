@@ -29,6 +29,11 @@
                    data-bs-toggle="tab">
                     <i class="bi bi-file-bar-graph"></i> Результаты прогнозирования
                 </a>
+                <a href="#recomendations" 
+                class="list-group-item list-group-item-action" 
+                data-bs-toggle="tab">
+                 <i class="bi bi-book-half"></i> Рекомендации
+             </a>
             </div>
         </div>
     </div>
@@ -181,48 +186,71 @@
             <!-- Вкладка "Отчеты" -->
             <div class="tab-pane fade" id="reports">
                 <div class="card shadow-sm">
-                    <div class="card-header bg-info text-white">
-                        <i class="bi bi-pie-chart"></i> Аналитика
-                    </div>
-                    <div class="card-body">
-                        <div class="row mb-4 g-2">
-                            <div class="col-md-4">
-                                <button class="btn btn-primary w-100" 
-                                        onclick="generateReport('stats')">
-                                    <i class="bi bi-clipboard-data"></i> Статистика
-                                </button>
-                            </div>
-                            <div class="col-md-4">
-                                <button class="btn btn-success w-100" 
-                                        onclick="generateReport('sales')">
-                                    <i class="bi bi-graph-up"></i> Продажи
-                                </button>
-                            </div>
-                            <div class="col-md-4">
-                                <button class="btn btn-warning w-100" 
-                                        onclick="generateReport('demand')">
-                                    <i class="bi bi-bar-chart"></i> Спрос
-                                </button>
-                            </div>
-                        </div>
-
-                        <!-- Контейнер для визуализации -->
-                        <div id="visualizationContainer">
-                            <div id="plotlyChart" style="height: 500px;"></div>
-                            <div id="textReport" class="d-none mt-4">
-                                <div class="card">
-                                    <div class="card-header bg-light">
-                                        <i class="bi bi-file-text"></i> Статистический отчет
-                                    </div>
-                                    <div class="card-body">
-                                        <pre class="mb-0" id="reportContent"></pre>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
+                <div class="card-header bg-info text-white">
+                    <i class="bi bi-pie-chart"></i> Аналитика
                 </div>
-            </div>
+                <div class="card-body">
+                    <!-- 1) Выбор файла -->
+                    <div class="row mb-3">
+                    <div class="col-md-6">
+                        <label for="reportFileSelect" class="form-label">Выберите файл:</label>
+                        <select id="reportFileSelect" class="form-select">
+                        <option value="" disabled selected>— выбрать файл —</option>
+                        {% for f in files %}
+                            <option value="{{ f.id }}">
+                            {{ f.filename }} ({{ f.uploaded_at.strftime('%Y-%m-%d') }})
+                            </option>
+                        {% endfor %}
+                        </select>
+                    </div>
+                    </div>
+            
+                    <!-- 2) Кнопки отчётов -->
+                    <div class="row mb-4 g-2">
+                    <div class="col-md-4">
+                        <button class="btn btn-primary w-100" onclick="generateReport('stats')">
+                        <i class="bi bi-clipboard-data"></i> Статистика
+                        </button>
+                    </div>
+                    <div class="col-md-4">
+                        <button class="btn btn-success w-100" onclick="generateReport('sales')">
+                        <i class="bi bi-graph-up"></i> Продажи
+                        </button>
+                    </div>
+                    <div class="col-md-4">
+                        <button class="btn btn-warning w-100" onclick="generateReport('demand')">
+                        <i class="bi bi-bar-chart"></i> Спрос
+                        </button>
+                    </div>
+                    </div>
+            
+                    <!-- Контейнер для результатов -->
+                    <div id="visualizationContainer" class="mt-4">
+                    <div class="row">
+                        <!-- Графики -->
+                        <div id="plotlyChartContainer" class="col-12 d-none">
+                        <div class="card mb-3">
+                            <div class="card-body p-0">
+                            <div id="plotlyChart" style="height: 500px;"></div>
+                            </div>
+                        </div>
+                        </div>
+                        <!-- Текстовый отчёт -->
+                        <div id="textReportContainer" class="col-12 d-none">
+                        <div class="card">
+                            <div class="card-header bg-light">
+                            <i class="bi bi-file-text"></i> Статистический отчёт
+                            </div>
+                            <div class="card-body">
+                            <pre class="mb-0" id="reportContent"></pre>
+                            </div>
+                        </div>
+                        </div>
+                    </div>
+                    </div>
+                </div> <!-- /.card-body -->
+                </div>   <!-- /.card -->
+            </div>     <!-- /.tab-pane -->
 
             <!-- Вкладка "Результат прогнозирования" -->
             <div class="tab-pane fade" id="forecastResults">
@@ -288,6 +316,17 @@
                     </div>
                 </div>
             </div>
+            <!-- Вкладка "Рекомендации" -->
+            <div class="tab-pane fade" id="recomendations">
+                <div class="card shadow-sm mb-4">
+                    <div class="card-header bg-info text-white">
+                        <i class="bi bi-info"></i> Рекомендации
+                    </div>
+                </div>
+                <div>
+                    Рекомендации формируются, подождите...
+                </div>
+            </div>
         </div>
     </div>
 </div>
@@ -298,28 +337,33 @@
 <script>
 // Генерация отчетов
 function generateReport(type) {
-    fetch(`/generate-report?type=${type}`)
-    .then(response => {
-        if (!response.ok) throw new Error('Ошибка сервера');
-        return response.json();
-    })
+  const fileId = document.getElementById('reportFileSelect').value;
+  if (!fileId) {
+    return alert('Пожалуйста, выберите файл');
+  }
+
+  // Скрываем оба контейнера перед запросом
+  document.getElementById('plotlyChartContainer').classList.add('d-none');
+  document.getElementById('textReportContainer').classList.add('d-none');
+  Plotly.purge('plotlyChart');
+
+  fetch(`/generate-report?type=${type}&file_id=${fileId}`)
+    .then(r => r.json())
     .then(data => {
-        const plotDiv = document.getElementById('plotlyChart');
-        const textDiv = document.getElementById('textReport');
-        
-        if (data.plot) {
-            plotDiv.style.display = 'block';
-            textDiv.classList.add('d-none');
-            Plotly.newPlot(plotDiv, data.plot.data, data.plot.layout);
-        } else if (data.text) {
-            plotDiv.style.display = 'none';
-            textDiv.classList.remove('d-none');
-            document.getElementById('reportContent').textContent = data.text;
-        }
+      if (data.error) {
+        return alert(data.error);
+      }
+
+      if (type === 'stats' && data.text) {
+        document.getElementById('reportContent').textContent = data.text;
+        document.getElementById('textReportContainer').classList.remove('d-none');
+      }
+      else if ((type === 'sales' || type === 'demand') && data.plot) {
+        document.getElementById('plotlyChartContainer').classList.remove('d-none');
+        Plotly.newPlot('plotlyChart', data.plot.data, data.plot.layout);
+      }
     })
-    .catch(error => {
-        alert(error.message);
-    });
+    .catch(() => alert('Ошибка при получении отчёта'));
 }
 
 function renderForecast(data) {

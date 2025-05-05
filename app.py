@@ -148,14 +148,22 @@ def delete_file(file_id):
 @login_required
 def generate_report():
     report_type = request.args.get('type', 'stats')
-    
+    file_id = request.args.get('file_id', type=int)
+
     try:
-        file = File.query.filter_by(user_id=current_user.id).order_by(File.uploaded_at.desc()).first()
+        # Если передан file_id — берём именно его, иначе последний
+        if file_id is not None:
+            file = File.query.filter_by(id=file_id, user_id=current_user.id).first()
+        else:
+            file = File.query \
+                       .filter_by(user_id=current_user.id) \
+                       .order_by(File.uploaded_at.desc()) \
+                       .first()
         if not file:
             return jsonify({'error': 'Нет загруженных данных'}), 400
         
         df = pd.read_csv(StringIO(file.data.decode('utf-8')))
-        
+
         if report_type == 'stats':
             report = df.describe().to_string()
             return jsonify({'text': report})
