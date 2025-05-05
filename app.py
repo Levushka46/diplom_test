@@ -2,7 +2,7 @@ import os
 from io import BytesIO, StringIO
 
 from flask import flash, Flask, jsonify, redirect, render_template, request, Response, url_for
-from flask_login import current_user, login_required, login_user, logout_user
+from flask_login import LoginManager, current_user, login_required, login_user, logout_user
 from werkzeug.utils import secure_filename
 
 import numpy as np
