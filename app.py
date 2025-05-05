@@ -122,12 +122,6 @@ def upload_file():
     except Exception as e:
         return jsonify({'error': f'Ошибка: {str(e)}'}), 500
 
-@app.route('/data')
-@login_required
-def data():
-    files = File.query.filter_by(user_id=current_user.id).all()
-    return render_template('data.html', files=files)
-
 @app.route('/download/<int:file_id>')
 @login_required
 def download_file(file_id):
@@ -145,7 +139,7 @@ def delete_file(file_id):
     db.session.delete(file)
     db.session.commit()
     flash('Файл удален!', 'success')
-    return redirect(url_for('data'))
+    return redirect(url_for('dashboard'))
 
 # ========================
 # Маршруты отчетов
