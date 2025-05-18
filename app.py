@@ -309,6 +309,13 @@ def forecast():
                     'yhat_upper': forecast['yhat_upper'].tolist()
                 }
             }
+            insights = generate_insights(
+                df=df_prop,                          # DataFrame с колонками ds и y
+                forecast=forecast['yhat'].values,    # numpy‑массив ваших прогнозных точек
+                future_dates=forecast['ds'],         # серии дат из forecast['ds']
+                season_period=None                   # сезонность для polynomial не задаётся
+            )
+            result['insights'] = insights
             save_forecast_result(file_id, model_type, result)
             return jsonify(result)
 
@@ -369,6 +376,19 @@ def forecast():
                     'yhat_upper': conf_int.iloc[:,1].round(2).tolist()
                 }
             }
+            df_prop = pd.DataFrame({
+                'ds': df.index,      # даты исторических точек
+                'y':  ts.values      # сами значения ряда
+            })
+
+            # И вызываем его на основе mean_pred и будущих дат
+            insights = generate_insights(
+                df=df_prop,
+                forecast=mean_pred.values,
+                future_dates=future_dates,
+                season_period=m
+            )
+            result['insights'] = insights
             save_forecast_result(file_id, model_type, result)
             return jsonify(result)
 
@@ -468,6 +488,14 @@ def forecast():
                     'yhat':   [round(float(v),2) for v in forecast]
                 }
             }
+            # Правильный вызов generate_insights для LSTM:
+            insights = generate_insights(
+                df=df,
+                forecast=forecast,
+                future_dates=future_dates,
+                season_period=None
+            )
+            result['insights'] = insights
             save_forecast_result(file_id, model_type, result)
             return jsonify(result)
 
@@ -490,6 +518,69 @@ def save_forecast_result(file_id, model_type, report_data):
         app.logger.error(f'Error saving forecast result: {str(e)}')
         db.session.rollback()
 
+def generate_insights(df, forecast, future_dates, season_period=None):
+    insights = []
+
+    # 1) Общий тренд прогноза
+    if len(forecast) >= 2:
+        first_fc, last_fc = forecast[0], forecast[-1]
+        if first_fc != 0:
+            change_pct = (last_fc - first_fc) / first_fc * 100
+            if change_pct > 0:
+                insights.append(
+                    f"• Прогноз показывает рост продаж на {change_pct:.1f}% "
+                    f"в период с {future_dates[0].strftime('%d-%m-%Y')} по {future_dates[-1].strftime('%%d-%m-%Y')}."
+                )
+            else:
+                insights.append(
+                    f"• Ожидается снижение продаж на {abs(change_pct):.1f}% — "
+                    "рассмотрите акции или спецпредложения для поддержки уровня продаж."
+                )
+
+    # 2) Топ‑3 и низ‑3 дня
+    import numpy as np
+    idx = np.argsort(forecast)
+    best3  = sorted(idx[-3:]) if len(forecast) >= 3 else idx
+    worst3 = sorted(idx[:3])  if len(forecast) >= 3 else idx
+    best_days  = ", ".join(future_dates[i].strftime('%d-%m-%Y') for i in best3)
+    worst_days = ", ".join(future_dates[i].strftime('%d-%m-%Y') for i in worst3)
+    if best_days:
+        insights.append(
+            f"• Пики продаж ожидаются: {best_days}. "
+            "Запланируйте маркетинговые активности именно в эти дни."
+        )
+    if worst_days:
+        insights.append(
+            f"• Наименьшие продажи: {worst_days}. "
+            "Для этих дат рекомендуется подготовить особые предложения."
+        )
+
+    # 3) Аномалии в исторических данных (опционально)
+    if season_period:
+        from statsmodels.tsa.seasonal import seasonal_decompose
+        try:
+            dec   = seasonal_decompose(df.set_index('ds')['y'], model='additive', period=season_period)
+            resid = dec.resid.dropna()
+            std   = resid.std()
+            anom  = resid[abs(resid) > 2 * std].index.strftime('%Y-%m-%d').tolist()
+            if anom:
+                insights.append(
+                    "• Обнаружены аномалии в исторических данных: " +
+                    ", ".join(anom[:5]) +
+                    (", …" if len(anom) > 5 else "") +
+                    ". Проверьте события в эти даты."
+                )
+        except Exception:
+            pass
+
+    # 4) Совет по сезонности
+    if season_period:
+        insights.append(
+            f"• Учитывайте сезонность с периодом {season_period} — "
+            "планируйте кампании заранее перед ожидаемыми пиками."
+        )
+
+    return insights
 
 @app.route('/report-data', methods=['GET'])
 def report_data():
@@ -518,6 +609,20 @@ def report_data():
     # 4. Отдаём напрямую клиенту
     return jsonify(result)
 
+@app.route('/recommendations', methods=['GET'])
+@login_required
+def recommendations():
+    # получаем report_id из query‑string
+    report_id = request.args.get('report_id')
+    if not report_id:
+        return jsonify({'error': 'report_id не задан'}), 400
+
+    rpt = ForecastResult.query.get(report_id)
+    if not rpt:
+        return jsonify({'error': 'Отчёт не найден'}), 200
+
+    insights = rpt.report_data.get('insights') or []
+    return jsonify({'insights': insights})
 
 if __name__ == '__main__':
     app.run(debug=True)

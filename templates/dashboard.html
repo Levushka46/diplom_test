@@ -380,14 +380,29 @@
             </div>
             <!-- Вкладка "Рекомендации" -->
             <div class="tab-pane fade" id="recomendations">
-                <div class="card shadow-sm mb-4">
-                    <div class="card-header bg-info text-white">
-                        <i class="bi bi-info"></i> Рекомендации
-                    </div>
+            <div class="card shadow-sm mb-4">
+                <div class="card-header bg-info text-white">
+                <i class="bi bi-info"></i> Рекомендации
                 </div>
-                <div>
-                    Рекомендации формируются, подождите...
-                </div>
+            </div>
+
+            <!-- 1) Выбор отчёта -->
+            <div class="mb-3">
+                <label class="form-label">Выберите отчёт</label>
+                <select id="recommendReportSelect" class="form-select">
+                <option value="" selected disabled>— выбрать отчёт —</option>
+                {% for rpt in reports %}
+                    <option value="{{ rpt.id }}">
+                    {{ rpt.model_type|upper }} • {{ rpt.file.filename }} ({{ rpt.created_at.strftime('%Y-%m-%d') }})
+                    </option>
+                {% endfor %}
+                </select>
+            </div>
+
+            <!-- 2) Здесь будут ваши советы -->
+            <div id="recommendationsList" class="mt-3">
+                <div class="text-muted">После выбора отчёта здесь появятся рекомендации.</div>
+            </div>
             </div>
         </div>
     </div>
@@ -401,6 +416,8 @@ const modelSelect   = document.getElementById('modelSelect');
 const polySettings  = document.getElementById('polySettings');
 const arimaSettings = document.getElementById('arimaSettings');
 const lstmSettings = document.getElementById('lstmSettings');
+const recSelect = document.getElementById('recommendReportSelect');
+const recList   = document.getElementById('recommendationsList');
 
 // Инициализация видимости при загрузке
 polySettings .classList.toggle('d-none', modelSelect.value !== 'polynomial');
@@ -602,6 +619,38 @@ document.querySelectorAll('.report-select').forEach(select => {
                 chartDiv.innerHTML = `<div class="alert alert-danger">Ошибка загрузки отчёта</div>`;
                 console.error(err);
             });
+    });
+});
+recSelect.addEventListener('change', () => {
+  const reportId = recSelect.value;
+  recList.innerHTML = '<div class="text-muted">Загрузка рекомендаций…</div>';
+
+  fetch(`/recommendations?report_id=${reportId}`, {
+    credentials: 'same-origin'
+  })
+    .then(async r => {
+      const data = await r.json();
+      if (r.status !== 200) {
+        // если 404 или другая ошибка, показываем текст из тела
+        const msg = data.error || `HTTP ${r.status}`;
+        recList.innerHTML = `<div class="alert alert-warning">${msg}</div>`;
+        // и дальше ничего не делаем
+        throw new Error(msg);
+      }
+      return data;
+    })
+    .then(data => {
+      if (!data.insights || !data.insights.length) {
+        recList.innerHTML = '<div class="alert alert-info">Советов не найдено.</div>';
+        return;
+      }
+      recList.innerHTML = data.insights
+        .map(s => `<div class="alert alert-info mb-2">${s}</div>`)
+        .join('');
+    })
+    .catch(err => {
+      console.warn('recommendations:', err.message);
+      // если это уже показали выше — ничего не меняем
     });
 });
 </script>
