@@ -245,7 +245,8 @@ def forecast():
         file_id = request.json.get('file_id')
         category = request.json.get('category')
         model_type = request.json.get('model')
-        
+        params = request.get_json()
+
         # Получаем файл из БД
         file = File.query.get(file_id)
         if not file:
@@ -256,40 +257,43 @@ def forecast():
         df = df[df['category'] == category]
         
         if model_type == 'polynomial':
-            # 1. Переименуем колонки и приведём дату
-            df_prop = df.rename(columns={'date': 'ds', 'value': 'y'}).copy()
-            df_prop['ds'] = pd.to_datetime(df_prop['ds'])
-            
-            # 2. Переведём дату в числовой признак (ordinal)
+            # 1) Получаем degree и include_bias из запроса (дефолты: 3 и False)
+            degree       = int(params.get('degree', 3))
+            include_bias = bool(params.get('include_bias', False))
+            future_days  = int(params.get('future_days', 30))
+            # 2) Подготовка df
+            df_prop = (
+                df.rename(columns={'date': 'ds', 'value': 'y'})
+                  .assign(ds=lambda d: pd.to_datetime(d['ds']))
+            )
+
+            # 3) Переводим дату в ordinal
             df_prop['ordinal'] = df_prop['ds'].map(datetime.datetime.toordinal)
-            X = df_prop[['ordinal']].values     # shape = (n_samples, 1)
-            y = df_prop['y'].values              # shape = (n_samples,)
-            
-            # 3. Создадим полиномиальные фичи (здесь degree=3)
-            poly = PolynomialFeatures(degree=3, include_bias=False)
-            X_poly = poly.fit_transform(X)       # shape = (n_samples, 3)
-            
-            # 4. Обучим линейную регрессию на полиномиальных фичах
-            linreg = LinearRegression()
-            linreg.fit(X_poly, y)
-            
-            # 5. Сгенерируем будущие даты (30 дней вперёд)
-            last_date = df_prop['ds'].max()
-            future_dates = [last_date + pd.Timedelta(days=i) for i in range(1, 31)]
-            future_ordinals = np.array([d.toordinal() for d in future_dates]).reshape(-1, 1)
-            X_future_poly = poly.transform(future_ordinals)
-            
-            # 6. Спрогнозируем значения
-            y_pred = linreg.predict(X_future_poly)
-            
-            # 7. Соберём DataFrame с прогнозом
+            X = df_prop[['ordinal']].values
+            y = df_prop['y'].values
+
+            # 4) Создаём полиномиальные фичи с динамическими параметрами
+            poly = PolynomialFeatures(degree=degree, include_bias=include_bias)
+            X_poly = poly.fit_transform(X)
+
+            # 5) Обучаем линейную регрессию
+            linreg = LinearRegression().fit(X_poly, y)
+
+            # 6) Генерируем будущие даты (по умолчанию 30 дней, можно тоже сделать параметром)
+            last_date    = df_prop['ds'].max()
+            future_dates = [last_date + pd.Timedelta(days=i) for i in range(1, future_days+1)]
+            ordinals     = np.array([d.toordinal() for d in future_dates]).reshape(-1, 1)
+            X_future     = poly.transform(ordinals)
+
+            # 7) Прогноз
+            y_pred = linreg.predict(X_future)
+
+            # 8) Формируем итоговый JSON
             forecast = pd.DataFrame({
-                'ds': future_dates,
-                'yhat':       np.round(y_pred, 2),
-                # Интервалов доверия у sklearn-регрессии нет, 
-                # поэтому просто повторим точечный прогноз:
-                'yhat_lower': np.round(y_pred, 2),
-                'yhat_upper': np.round(y_pred, 2),
+                'ds':          future_dates,
+                'yhat':        np.round(y_pred, 2),
+                'yhat_lower':  np.round(y_pred, 2),
+                'yhat_upper':  np.round(y_pred, 2),
             })
 
             result = {
@@ -298,10 +302,10 @@ def forecast():
                     'values': df_prop['y'].tolist()
                 },
                 'forecast': {
-                    'dates': forecast['ds'].dt.strftime('%Y-%m-%d').tolist(),
-                    'yhat': forecast['yhat'].round(2).tolist(),
-                    'yhat_lower': forecast['yhat_lower'].round(2).tolist(),
-                    'yhat_upper': forecast['yhat_upper'].round(2).tolist()
+                    'dates':      forecast['ds'].dt.strftime('%Y-%m-%d').tolist(),
+                    'yhat':       forecast['yhat'].tolist(),
+                    'yhat_lower': forecast['yhat_lower'].tolist(),
+                    'yhat_upper': forecast['yhat_upper'].tolist()
                 }
             }
             save_forecast_result(file_id, model_type, result)
@@ -362,6 +366,7 @@ def forecast():
 
         elif model_type == 'lstm':
             epoch_const = 150
+            predict_range = 120
             # ----------------------------------------
             # Колбэки для контроля обучения
             # ----------------------------------------
@@ -437,7 +442,7 @@ def forecast():
             # ----------------------------------------
             last_sequence = y_scaled[-LOOK_BACK :].reshape(1, LOOK_BACK, 1)
             forecast_scaled = []
-            for _ in range(30):
+            for _ in range(predict_range):
                 pred = model.predict(last_sequence, verbose=0)
                 forecast_scaled.append(pred[0, 0])
                 # подставляем предсказание в конец окна
@@ -458,7 +463,7 @@ def forecast():
             last_date = df['ds'].max()
             future_dates = pd.date_range(
                 start=last_date + pd.Timedelta(days=1),
-                periods=30,
+                periods=predict_range,
                 freq='D'
             )
 

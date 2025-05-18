@@ -174,6 +174,41 @@
                             </select>
                         </div>
 
+                        <!-- Доп. настройки для Polynomial -->
+                        <div id="polySettings" class="mb-4 d-none">
+                            <label class="form-label">Степень полинома (degree)</label>
+                            <input type="number" class="form-control" id="polyDegree" min="1" value="3">
+
+                            <div class="form-check mt-2">
+                                <input class="form-check-input" type="checkbox" id="polyIncludeBias">
+                                <label class="form-check-label" for="polyIncludeBias">
+                                    Включить свободный член (include_bias)
+                                </label>
+                            </div>
+                              <div class="mt-3">
+                                <label class="form-label">Горизонт прогноза (future_days)</label>
+                                <input type="number"
+                                    class="form-control"
+                                    id="polyFutureDays"
+                                    min="1"
+                                    value="90">
+                            </div>
+                        </div>
+                        <div id="arimaSettings" class="mb-4 d-none">
+                            <label class="form-label">Длина сезона (m)</label>
+                            <input type="number"
+                                    class="form-control"
+                                    id="arimaSeasonLength"
+                                    min="1"
+                                    value="7">
+
+                            <label class="form-label mt-3">Горизонт прогнозирования (дней)</label>
+                            <input type="number"
+                                    class="form-control"
+                                    id="arimaFutureDays"
+                                    min="1"
+                                    value="30">
+                        </div>
                         <button id="forecastButton" 
                                 class="btn btn-danger w-100" 
                                 onclick="runForecast()">
@@ -280,7 +315,7 @@
                                     <select class="form-select report-select" data-model="polynomial">
                                         <option value="" selected disabled>-- Выберите файл --</option>
                                         {% for rpt in reports if rpt.model_type == 'polynomial' %}
-                                        <option value="{{ rpt.id }}">{{ rpt.id }} {{ rpt.file.filename }} ({{ rpt.created_at.strftime('%d.%m.%Y') }})</option>
+                                        <option value="{{ rpt.id }}">{{ rpt.user.email }} {{ rpt.file.filename }} ({{ rpt.created_at.strftime('%d.%m.%Y') }})</option>
                                         {% endfor %}
                                     </select>
                                 </div>
@@ -293,7 +328,7 @@
                                     <select class="form-select report-select" data-model="arima">
                                         <option value="" selected disabled>-- Выберите файл --</option>
                                         {% for rpt in reports if rpt.model_type == 'arima' %}
-                                        <option value="{{ rpt.id }}">{{ rpt.id }} {{ rpt.file.filename }} ({{ rpt.created_at.strftime('%d.%m.%Y') }})</option>
+                                        <option value="{{ rpt.id }}">{{ rpt.user.email }} {{ rpt.file.filename }} ({{ rpt.created_at.strftime('%d.%m.%Y') }})</option>
                                         {% endfor %}
                                     </select>
                                 </div>
@@ -306,7 +341,7 @@
                                     <select class="form-select report-select" data-model="lstm">
                                         <option value="" selected disabled>-- Выберите файл --</option>
                                         {% for rpt in reports if rpt.model_type == 'lstm' %}
-                                        <option value="{{ rpt.id }}">{{ rpt.id }} {{ rpt.file.filename }} ({{ rpt.created_at.strftime('%d.%m.%Y') }})</option>
+                                        <option value="{{ rpt.id }}">{{ rpt.user.email }} {{ rpt.file.filename }} ({{ rpt.created_at.strftime('%d.%m.%Y') }})</option>
                                         {% endfor %}
                                     </select>
                                 </div>
@@ -335,6 +370,14 @@
 {% block scripts %}
 <script src="https://cdn.plot.ly/plotly-2.18.2.min.js"></script>
 <script>
+document.getElementById('modelSelect').addEventListener('change', function() {
+  const polySettings = document.getElementById('polySettings');
+  if (this.value === 'polynomial') {
+    polySettings.classList.remove('d-none');
+  } else {
+    polySettings.classList.add('d-none');
+  }
+});
 // Генерация отчетов
 function generateReport(type) {
   const fileId = document.getElementById('reportFileSelect').value;
@@ -426,22 +469,28 @@ function showSuccess(message) {
 
 function runForecast() {
     const button = document.getElementById('forecastButton');
-    if (!button) {
-        console.error('Кнопка не найдена!');
-        return;
-    }
-    
     button.disabled = true;
     button.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Обработка...';
 
+    const model = document.getElementById('modelSelect').value;
+    // базовый payload
+    const payload = {
+    file_id:  document.getElementById('fileSelect').value,
+    category: document.getElementById('categorySelect').value,
+    model:    model
+    };
+
+    // добавляем degree и include_bias только для Polynomial
+    if (model === 'polynomial') {
+    payload.degree       = parseInt(document.getElementById('polyDegree').value, 10);
+    payload.include_bias = document.getElementById('polyIncludeBias').checked;
+    payload.future_days  = parseInt(document.getElementById('polyFutureDays').value, 10);
+    }
+
     fetch('/forecast', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({
-            file_id: document.getElementById('fileSelect').value,
-            category: document.getElementById('categorySelect').value,
-            model: document.getElementById('modelSelect').value
-        })
+    method:  'POST',
+    headers: {'Content-Type': 'application/json'},
+    body:    JSON.stringify(payload)
     })
     .then(response => {
         if (!response.ok) {
@@ -465,8 +514,8 @@ function runForecast() {
         showError(`Ошибка: ${error.message}`);
     })
     .finally(() => {
-        button.disabled = false;
-        button.innerHTML = '<i class="bi bi-lightning-charge"></i> Построить прогноз';
+    button.disabled = false;
+    button.innerHTML = '<i class="bi bi-lightning-charge"></i> Построить прогноз';
     });
 }
 
