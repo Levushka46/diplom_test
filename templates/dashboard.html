@@ -194,20 +194,21 @@
                                     value="90">
                             </div>
                         </div>
+                        <!-- Доп. настройки для Arima -->
                         <div id="arimaSettings" class="mb-4 d-none">
                             <label class="form-label">Длина сезона (m)</label>
                             <input type="number"
                                     class="form-control"
                                     id="arimaSeasonLength"
                                     min="1"
-                                    value="7">
+                                    value="12">
 
                             <label class="form-label mt-3">Горизонт прогнозирования (дней)</label>
                             <input type="number"
                                     class="form-control"
                                     id="arimaFutureDays"
                                     min="1"
-                                    value="30">
+                                    value="90">
                         </div>
                         <button id="forecastButton" 
                                 class="btn btn-danger w-100" 
@@ -370,13 +371,17 @@
 {% block scripts %}
 <script src="https://cdn.plot.ly/plotly-2.18.2.min.js"></script>
 <script>
-document.getElementById('modelSelect').addEventListener('change', function() {
-  const polySettings = document.getElementById('polySettings');
-  if (this.value === 'polynomial') {
-    polySettings.classList.remove('d-none');
-  } else {
-    polySettings.classList.add('d-none');
-  }
+const modelSelect   = document.getElementById('modelSelect');
+const polySettings  = document.getElementById('polySettings');
+const arimaSettings = document.getElementById('arimaSettings');
+
+// Инициализация видимости при загрузке
+polySettings .classList.toggle('d-none', modelSelect.value !== 'polynomial');
+arimaSettings.classList.toggle('d-none', modelSelect.value !== 'arima');
+
+modelSelect.addEventListener('change', function() {
+polySettings .classList.toggle('d-none', this.value !== 'polynomial');
+arimaSettings.classList.toggle('d-none', this.value !== 'arima');
 });
 // Генерация отчетов
 function generateReport(type) {
@@ -486,7 +491,10 @@ function runForecast() {
     payload.include_bias = document.getElementById('polyIncludeBias').checked;
     payload.future_days  = parseInt(document.getElementById('polyFutureDays').value, 10);
     }
-
+    else if (model === 'arima') {
+        payload.m           = parseInt(document.getElementById('arimaSeasonLength').value, 10);
+        payload.future_days = parseInt(document.getElementById('arimaFutureDays').value, 10);
+    }
     fetch('/forecast', {
     method:  'POST',
     headers: {'Content-Type': 'application/json'},

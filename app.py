@@ -312,57 +312,64 @@ def forecast():
             return jsonify(result)
 
         elif model_type == 'arima':
-            # 1. Загрузка и подготовка данных
+            # 1) Читаем из запроса
+            m           = int(params.get('m',           7))   # длина сезона
+            future_days = int(params.get('future_days', 30))  # горизонт прогноза
+
+            # 2) Подготовка временного ряда
             df['date'] = pd.to_datetime(df['date'])
             df = df.set_index('date').asfreq('D')
             df['value'].interpolate(method='time', inplace=True)
+            ts = df['value']
 
-            df = df.rename(columns={'value': 'y'})
-            df = df.reset_index().rename(columns={'date': 'ds'})
-            df['ds'] = pd.to_datetime(df['ds'])
-
-            # 2. Разделим на train / test (по желанию)
-            #train = df.iloc[:-30]
-            #test  = df.iloc[-30:]
-            train = df
-
-            # 3. Подбор параметров SARIMA
+            # 3) Автоподбор SARIMA с учётом m
             stepwise_model = auto_arima(
-                train['y'],
+                ts,
                 start_p=0, start_q=0,
-                max_p=5, max_q=5,
-                m=7,               # недельная сезонность
+                max_p=5,   max_q=5,
+                d=None,    D=1,
+                m=m,
                 seasonal=True,
-                d=None, D=1,
                 trace=False,
                 error_action='ignore',
                 suppress_warnings=True,
                 stepwise=True
             )
 
-            # 4. Обучение финальной модели
-            order = stepwise_model.order
+            # 4) Строим и тренируем модель
+            order          = stepwise_model.order
             seasonal_order = stepwise_model.seasonal_order
-            model = ARIMA(train['y'], order=order, seasonal_order=seasonal_order)
-            fitted = model.fit()
+            model          = ARIMA(ts, order=order, seasonal_order=seasonal_order)
+            fitted         = model.fit()
 
-            # 5. Прогноз на будущие 30 дней
-            n_periods = 30
-            forecast_res = fitted.get_forecast(steps=n_periods)
-            forecast_mean = forecast_res.predicted_mean
-            conf_int = forecast_res.conf_int(alpha=0.05)
+            # 5) Делаем прогноз на future_days
+            forecast_res = fitted.get_forecast(steps=future_days)
+            mean_pred    = forecast_res.predicted_mean
+            conf_int     = forecast_res.conf_int(alpha=0.05)
 
-            # 6. Формируем DataFrame для прогноза
-            last_date = df['ds'].max()
-            future_dates = pd.date_range(start=last_date + pd.Timedelta(days=1),
-                                        periods=n_periods, freq='D')
+            # 6) Готовим даты прогноза
+            last_date    = df.index.max()
+            future_dates = pd.date_range(
+                start=last_date + pd.Timedelta(days=1),
+                periods=future_days,
+                freq='D'
+            )
 
-            forecast = pd.DataFrame({
-                'ds': future_dates,
-                'yhat': forecast_mean.values,
-                'yhat_lower': conf_int.iloc[:, 0].values,
-                'yhat_upper': conf_int.iloc[:, 1].values
-            })
+            # 7) Собираем результат
+            result = {
+                'historical': {
+                    'dates': df.index.strftime('%Y-%m-%d').tolist(),
+                    'values': ts.tolist()
+                },
+                'forecast': {
+                    'dates':      future_dates.strftime('%Y-%m-%d').tolist(),
+                    'yhat':       mean_pred.round(2).tolist(),
+                    'yhat_lower': conf_int.iloc[:,0].round(2).tolist(),
+                    'yhat_upper': conf_int.iloc[:,1].round(2).tolist()
+                }
+            }
+            save_forecast_result(file_id, model_type, result)
+            return jsonify(result)
 
         elif model_type == 'lstm':
             epoch_const = 150
