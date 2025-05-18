@@ -210,6 +210,32 @@
                                     min="1"
                                     value="90">
                         </div>
+                        <!-- Доп. настройки для LSTM -->
+                        <div id="lstmSettings" class="mb-4 d-none">
+                            <label class="form-label">Окно LOOK_BACK (дней)</label>
+                            <input type="number" id="lstmLookBack" class="form-control" value="30" min="1">
+
+                            <label class="form-label mt-3">Горизонт прогноза predict_range (дней)</label>
+                            <input type="number" id="lstmPredictRange" class="form-control" value="120" min="1">
+
+                            <label class="form-label mt-3">Нейронов в первом LSTM‑слое</label>
+                            <input type="number" id="lstmUnits1" class="form-control" value="64" min="1">
+
+                            <label class="form-label mt-3">Нейронов во втором LSTM‑слое</label>
+                            <input type="number" id="lstmUnits2" class="form-control" value="32" min="1">
+
+                            <label class="form-label mt-3">Dropout</label>
+                            <input type="number" step="0.01" id="lstmDropout" class="form-control" value="0.2" min="0" max="1">
+
+                            <label class="form-label mt-3">Recurrent dropout</label>
+                            <input type="number" step="0.01" id="lstmRecDropout" class="form-control" value="0.2" min="0" max="1">
+
+                            <label class="form-label mt-3">Эпохи (epoch_const)</label>
+                            <input type="number" id="lstmEpochs" class="form-control" value="150" min="1">
+
+                            <label class="form-label mt-3">Learning rate (LR)</label>
+                            <input type="number" step="0.0001" id="lstmLr" class="form-control" value="0.001" min="0">
+                        </div>
                         <button id="forecastButton" 
                                 class="btn btn-danger w-100" 
                                 onclick="runForecast()">
@@ -374,6 +400,7 @@
 const modelSelect   = document.getElementById('modelSelect');
 const polySettings  = document.getElementById('polySettings');
 const arimaSettings = document.getElementById('arimaSettings');
+const lstmSettings = document.getElementById('lstmSettings');
 
 // Инициализация видимости при загрузке
 polySettings .classList.toggle('d-none', modelSelect.value !== 'polynomial');
@@ -382,6 +409,7 @@ arimaSettings.classList.toggle('d-none', modelSelect.value !== 'arima');
 modelSelect.addEventListener('change', function() {
 polySettings .classList.toggle('d-none', this.value !== 'polynomial');
 arimaSettings.classList.toggle('d-none', this.value !== 'arima');
+lstmSettings.classList.toggle('d-none', this.value !== 'lstm');
 });
 // Генерация отчетов
 function generateReport(type) {
@@ -495,6 +523,16 @@ function runForecast() {
         payload.m           = parseInt(document.getElementById('arimaSeasonLength').value, 10);
         payload.future_days = parseInt(document.getElementById('arimaFutureDays').value, 10);
     }
+    else if (model === 'lstm'){
+    payload.look_back       = parseInt(document.getElementById('lstmLookBack').value, 10);
+    payload.predict_range   = parseInt(document.getElementById('lstmPredictRange').value, 10);
+    payload.units1          = parseInt(document.getElementById('lstmUnits1').value, 10);
+    payload.units2          = parseInt(document.getElementById('lstmUnits2').value, 10);
+    payload.dropout         = parseFloat(document.getElementById('lstmDropout').value);
+    payload.recurrent_dropout = parseFloat(document.getElementById('lstmRecDropout').value);
+    payload.epoch_const     = parseInt(document.getElementById('lstmEpochs').value, 10);
+    payload.learning_rate   = parseFloat(document.getElementById('lstmLr').value);
+    }
     fetch('/forecast', {
     method:  'POST',
     headers: {'Content-Type': 'application/json'},
@@ -526,7 +564,6 @@ function runForecast() {
     button.innerHTML = '<i class="bi bi-lightning-charge"></i> Построить прогноз';
     });
 }
-
 // Обработчик выбора отчёта
 document.querySelectorAll('.report-select').forEach(select => {
     select.addEventListener('change', () => {

@@ -18,6 +18,7 @@ import datetime
 from tensorflow.keras.layers import Dense, LSTM
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
+from tensorflow.keras.optimizers import Adam
 from models import db, File, ForecastResult, User
 
 
@@ -372,111 +373,91 @@ def forecast():
             return jsonify(result)
 
         elif model_type == 'lstm':
-            epoch_const = 150
-            predict_range = 120
-            # ----------------------------------------
-            # Колбэки для контроля обучения
-            # ----------------------------------------
+            LOOK_BACK      = int(params.get('look_back',     30))
+            predict_range  = int(params.get('predict_range', 120))
+            units1         = int(params.get('units1',        64))
+            units2         = int(params.get('units2',        32))
+            dropout        = float(params.get('dropout',      0.2))
+            rec_dropout    = float(params.get('recurrent_dropout', 0.2))
+            epoch_const    = int(params.get('epoch_const',   150))
+            lr             = float(params.get('learning_rate', 0.001))
+
+            # колбэки
             callbacks = [
-                EarlyStopping(monitor='val_loss', patience=epoch_const/3, min_delta=1e-4, restore_best_weights=True),
-                ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=10)
+                EarlyStopping(monitor='val_loss',
+                            patience=int(epoch_const/3),
+                            min_delta=1e-4,
+                            restore_best_weights=True),
+                ReduceLROnPlateau(monitor='val_loss',
+                                factor=0.5,
+                                patience=10)
             ]
 
-            # ----------------------------------------
-            # 1. Загрузка и подготовка данных
-            # ----------------------------------------
+            # подготовка ряда…
             df['date'] = pd.to_datetime(df['date'])
             df = df.set_index('date').asfreq('D')
             df['value'].interpolate(method='time', inplace=True)
-            df = (
-                df
-                .rename(columns={'value': 'y'})
-                .reset_index()
-                .rename(columns={'date': 'ds'})
-            )
+            df = df.rename(columns={'value':'y'}).reset_index().rename(columns={'date':'ds'})
 
-            # ----------------------------------------
-            # 2. Масштабирование
-            # ----------------------------------------
-            scaler = MinMaxScaler(feature_range=(0, 1))
-            y_scaled = scaler.fit_transform(df['y'].values.reshape(-1, 1))
+            # масштабирование
+            scaler = MinMaxScaler((0,1))
+            y_scaled = scaler.fit_transform(df['y'].values.reshape(-1,1))
 
-            # ----------------------------------------
-            # 3. Создание обучающих последовательностей
-            # ----------------------------------------
-            def create_sequences(data: np.ndarray, look_back: int):
-                X, y = [], []
-                for i in range(len(data) - look_back):
-                    X.append(data[i : i + look_back, 0])   # взять прошлые look_back точек
-                    y.append(data[i + look_back, 0])       # предсказать следующую
+            # создаём последовательности
+            def create_sequences(data, look_back):
+                X,y = [],[]
+                for i in range(len(data)-look_back):
+                    X.append(data[i:i+look_back,0])
+                    y.append(data[i+look_back,0])
                 return np.array(X), np.array(y)
 
-            LOOK_BACK = 30   # увеличили до 30 дней
             X, y_train = create_sequences(y_scaled, look_back=LOOK_BACK)
-            # приводим к форме [samples, timesteps, features]
             X_train = X.reshape((X.shape[0], LOOK_BACK, 1))
 
-            # ----------------------------------------
-            # 4. Построение LSTM-модели
-            # ----------------------------------------
+            # строим модель с динамическими юнитами и dropout
             model = Sequential([
-                LSTM(
-                    64,
+                LSTM(units1,
                     return_sequences=True,
-                    dropout=0.2,
-                    recurrent_dropout=0.2,
-                    input_shape=(LOOK_BACK, 1)
-                ),
-                LSTM(32, dropout=0.2, recurrent_dropout=0.2),
+                    dropout=dropout,
+                    recurrent_dropout=rec_dropout,
+                    input_shape=(LOOK_BACK,1)),
+                LSTM(units2,
+                    dropout=dropout,
+                    recurrent_dropout=rec_dropout),
                 Dense(1)
             ])
-            model.compile(optimizer='adam', loss='mse')
+            optimizer = Adam(learning_rate=lr)
+            model.compile(optimizer=optimizer, loss='mse')
 
-            # ----------------------------------------
-            # 5. Обучение
-            # ----------------------------------------
+            # обучение
             model.fit(
                 X_train, y_train,
                 epochs=epoch_const,
                 batch_size=32,
-                validation_split=0.1,  # 10% в валидацию
-                shuffle=False,         # важный момент для временных рядов
+                validation_split=0.1,
+                shuffle=False,
                 callbacks=callbacks
             )
 
-            # ----------------------------------------
-            # 6. Итеративный прогноз на 30 дней
-            # ----------------------------------------
-            last_sequence = y_scaled[-LOOK_BACK :].reshape(1, LOOK_BACK, 1)
+            # прогноз
+            last_sequence = y_scaled[-LOOK_BACK:].reshape(1,LOOK_BACK,1)
             forecast_scaled = []
             for _ in range(predict_range):
                 pred = model.predict(last_sequence, verbose=0)
-                forecast_scaled.append(pred[0, 0])
-                # подставляем предсказание в конец окна
-                last_sequence = np.append(
-                    last_sequence[:, 1:, :],
-                    pred.reshape(1, 1, 1),
-                    axis=1
-                )
+                forecast_scaled.append(pred[0,0])
+                last_sequence = np.append(last_sequence[:,1:,:],
+                                        pred.reshape(1,1,1),
+                                        axis=1)
 
-            # Отмасштабируем обратно
             forecast = scaler.inverse_transform(
-                np.array(forecast_scaled).reshape(-1, 1)
+                np.array(forecast_scaled).reshape(-1,1)
             ).flatten()
 
-            # ----------------------------------------
-            # 7. Формирование дат прогноза
-            # ----------------------------------------
+            # даты и ответ
             last_date = df['ds'].max()
-            future_dates = pd.date_range(
-                start=last_date + pd.Timedelta(days=1),
-                periods=predict_range,
-                freq='D'
-            )
+            future_dates = pd.date_range(start=last_date + pd.Timedelta(days=1),
+                                        periods=predict_range, freq='D')
 
-            # ----------------------------------------
-            # 8. Сборка результата и возврат
-            # ----------------------------------------
             result = {
                 'historical': {
                     'dates':  df['ds'].dt.strftime('%Y-%m-%d').tolist(),
@@ -484,7 +465,7 @@ def forecast():
                 },
                 'forecast': {
                     'dates': future_dates.strftime('%Y-%m-%d').tolist(),
-                    'yhat':   [round(float(v), 2) for v in forecast]
+                    'yhat':   [round(float(v),2) for v in forecast]
                 }
             }
             save_forecast_result(file_id, model_type, result)
