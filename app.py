@@ -244,6 +244,7 @@ def forecast():
     try:
         # Получаем данные из запроса
         file_id = request.json.get('file_id')
+        print(file_id)
         category = request.json.get('category')
         model_type = request.json.get('model')
         params = request.get_json()
@@ -309,10 +310,13 @@ def forecast():
                     'yhat_upper': forecast['yhat_upper'].tolist()
                 }
             }
+            future_dates = pd.date_range(start=last_date + pd.Timedelta(days=1),
+                             periods=future_days,
+                             freq='D')
             insights = generate_insights(
                 df=df_prop,                          # DataFrame с колонками ds и y
                 forecast=forecast['yhat'].values,    # numpy‑массив ваших прогнозных точек
-                future_dates=forecast['ds'],         # серии дат из forecast['ds']
+                future_dates=future_dates,         # серии дат из forecast['ds']
                 season_period=None                   # сезонность для polynomial не задаётся
             )
             result['insights'] = insights
@@ -519,6 +523,8 @@ def save_forecast_result(file_id, model_type, report_data):
         db.session.rollback()
 
 def generate_insights(df, forecast, future_dates, season_period=None):
+    if len(future_dates)>0 and isinstance(future_dates[0], str):
+        future_dates = pd.to_datetime(future_dates)
     insights = []
 
     # 1) Общий тренд прогноза
@@ -529,7 +535,7 @@ def generate_insights(df, forecast, future_dates, season_period=None):
             if change_pct > 0:
                 insights.append(
                     f"• Прогноз показывает рост продаж на {change_pct:.1f}% "
-                    f"в период с {future_dates[0].strftime('%d-%m-%Y')} по {future_dates[-1].strftime('%%d-%m-%Y')}."
+                    f"в период с {future_dates[0].strftime('%d-%m-%Y')} по {future_dates[-1].strftime('%d-%m-%Y')}."
                 )
             else:
                 insights.append(
@@ -562,7 +568,7 @@ def generate_insights(df, forecast, future_dates, season_period=None):
             dec   = seasonal_decompose(df.set_index('ds')['y'], model='additive', period=season_period)
             resid = dec.resid.dropna()
             std   = resid.std()
-            anom  = resid[abs(resid) > 2 * std].index.strftime('%Y-%m-%d').tolist()
+            anom  = resid[abs(resid) > 2 * std].index.strftime('%d-%m-%Y').tolist()
             if anom:
                 insights.append(
                     "• Обнаружены аномалии в исторических данных: " +
