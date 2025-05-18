@@ -612,17 +612,25 @@ def report_data():
 @app.route('/recommendations', methods=['GET'])
 @login_required
 def recommendations():
-    # получаем report_id из query‑string
     report_id = request.args.get('report_id')
     if not report_id:
-        return jsonify({'error': 'report_id не задан'}), 400
+        return jsonify({'error': 'report_id не задан'}), 200
 
     rpt = ForecastResult.query.get(report_id)
     if not rpt:
         return jsonify({'error': 'Отчёт не найден'}), 200
 
-    insights = rpt.report_data.get('insights') or []
-    return jsonify({'insights': insights})
+    # report_data у вас уже содержит 'historical' и 'forecast'
+    data = rpt.report_data
+    insights   = data.get('insights', [])
+    historical = data.get('historical', {})
+    forecast   = data.get('forecast', {})
+
+    return jsonify({
+      'insights':   insights,
+      'historical': historical,
+      'forecast':   forecast
+    })
 
 if __name__ == '__main__':
     app.run(debug=True)

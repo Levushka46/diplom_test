@@ -403,6 +403,12 @@
             <div id="recommendationsList" class="mt-3">
                 <div class="text-muted">После выбора отчёта здесь появятся рекомендации.</div>
             </div>
+
+            <!-- ↓↓↓ новый контейнер для графика ↓↓↓ -->
+            <div class="mt-4">
+                <h5>График прогноза</h5>
+                <div id="recommendationChart" style="height:300px;"></div>
+            </div>
             </div>
         </div>
     </div>
@@ -631,26 +637,48 @@ recSelect.addEventListener('change', () => {
     .then(async r => {
       const data = await r.json();
       if (r.status !== 200) {
-        // если 404 или другая ошибка, показываем текст из тела
         const msg = data.error || `HTTP ${r.status}`;
         recList.innerHTML = `<div class="alert alert-warning">${msg}</div>`;
-        // и дальше ничего не делаем
         throw new Error(msg);
       }
       return data;
     })
     .then(data => {
+      // 1) текстовые советы
       if (!data.insights || !data.insights.length) {
         recList.innerHTML = '<div class="alert alert-info">Советов не найдено.</div>';
-        return;
+      } else {
+        recList.innerHTML = data.insights
+          .map(s => `<div class="alert alert-info mb-2">${s}</div>`)
+          .join('');
       }
-      recList.innerHTML = data.insights
-        .map(s => `<div class="alert alert-info mb-2">${s}</div>`)
-        .join('');
+      // 2) рисуем график прогноза
+      const hist = data.historical;
+      const fc   = data.forecast;
+      if (hist && hist.dates && fc && fc.dates) {
+        Plotly.newPlot('recommendationChart', [
+          {
+            x: hist.dates,
+            y: hist.values,
+            name: 'Исторические',
+            mode: 'lines'
+          },
+          {
+            x: fc.dates,
+            y: fc.yhat,
+            name: 'Прогноз',
+            mode: 'lines'
+          }
+        ], {
+          margin: { t:30, b:30, l:40, r:10 },
+          xaxis: { title: 'Дата' },
+          yaxis: { title: 'Значение' }
+        });
+      }
     })
     .catch(err => {
       console.warn('recommendations:', err.message);
-      // если это уже показали выше — ничего не меняем
+      // здесь не затираем recList, т.к. сообщение уже показано
     });
 });
 </script>
